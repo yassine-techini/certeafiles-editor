@@ -1,0 +1,1 @@
+export { editorTheme } from './editorTheme';
