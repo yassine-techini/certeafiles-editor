@@ -17,10 +17,3 @@ name = "certeafiles-editor-preview"
 
 [env.preview.vars]
 ENVIRONMENT = "preview"
-
-# Staging environment
-[env.staging]
-name = "certeafiles-editor-staging"
-
-[env.staging.vars]
-ENVIRONMENT = "staging"
