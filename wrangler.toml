@@ -4,16 +4,53 @@
 name = "certeafiles-editor"
 compatibility_date = "2024-12-01"
 
+# Compatibility flags for Workers
+compatibility_flags = ["nodejs_compat"]
+
 # Pages configuration
 pages_build_output_dir = "dist"
 
-# Environment variables (non-sensitive)
+# =============================================================================
+# D1 Database Binding
+# =============================================================================
+[[d1_databases]]
+binding = "DB"
+database_name = "certeafiles-db"
+database_id = "9600c88a-ac17-4d2b-8d1e-b4ae2b8e6dae"
+
+# =============================================================================
+# R2 Bucket Binding
+# =============================================================================
+[[r2_buckets]]
+binding = "R2_ASSETS"
+bucket_name = "certeafiles-assets"
+
+# =============================================================================
+# Environment Variables (non-sensitive)
+# =============================================================================
 [vars]
 ENVIRONMENT = "production"
+APP_NAME = "Certeafiles Editor"
+APP_VERSION = "0.1.0"
 
-# Preview environment
+# =============================================================================
+# Preview Environment (for all non-main branches)
+# =============================================================================
 [env.preview]
 name = "certeafiles-editor-preview"
 
+# Preview uses the same D1 database (can be changed to separate preview DB)
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "certeafiles-db"
+database_id = "9600c88a-ac17-4d2b-8d1e-b4ae2b8e6dae"
+
+# Preview uses the same R2 bucket (can be changed to separate preview bucket)
+[[env.preview.r2_buckets]]
+binding = "R2_ASSETS"
+bucket_name = "certeafiles-assets"
+
 [env.preview.vars]
 ENVIRONMENT = "preview"
+APP_NAME = "Certeafiles Editor (Preview)"
+APP_VERSION = "0.1.0"
