@@ -1,1 +1,1 @@
-export { editorTheme } from './editorTheme';
+export { editorTheme, THEME_PREFIX, getThemeClass } from './editorTheme';

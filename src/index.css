@@ -209,15 +209,18 @@ body {
 }
 
 /* Editor container */
-.editor-container {
+.certeafiles-editor-container {
   position: relative;
-  background: #e5e5e5;
-  overflow: auto;
-  padding: 32px;
+}
+
+.editor-root {
+  min-height: 100%;
 }
 
 .editor-content {
   outline: none;
+  min-height: 100%;
+  caret-color: #000;
 }
 
 .editor-content:focus {
@@ -229,7 +232,130 @@ body {
   color: #999;
   overflow: hidden;
   position: absolute;
-  top: 75.6px;
-  left: 75.6px;
+  top: 0;
+  left: 0;
   pointer-events: none;
+  user-select: none;
+}
+
+/* Text highlighting */
+.editor-highlight {
+  background-color: #ffff00;
+}
+
+/* Inline code */
+.editor-code-inline {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  background-color: #f0f0f0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+/* Horizontal rule */
+.editor-hr {
+  border: none;
+  border-top: 2px solid #e0e0e0;
+  margin: 16px 0;
+}
+
+/* List depth styles */
+.editor-ul-depth-1 {
+  list-style-type: disc;
+}
+
+.editor-ul-depth-2 {
+  list-style-type: circle;
+}
+
+.editor-ul-depth-3 {
+  list-style-type: square;
+}
+
+.editor-ol-depth-1 {
+  list-style-type: decimal;
+}
+
+.editor-ol-depth-2 {
+  list-style-type: lower-alpha;
+}
+
+.editor-ol-depth-3 {
+  list-style-type: lower-roman;
+}
+
+/* Checklist styles */
+.editor-listitem-checked {
+  text-decoration: line-through;
+  color: #888;
+}
+
+.editor-listitem-unchecked {
+  text-decoration: none;
+}
+
+/* Table selection */
+.editor-table-cell-selected {
+  background-color: #e3f2fd;
+}
+
+.editor-table-selected {
+  outline: 2px solid #2196f3;
+}
+
+/* Code syntax highlighting */
+.editor-code-comment {
+  color: #6a9955;
+}
+
+.editor-code-keyword {
+  color: #569cd6;
+}
+
+.editor-code-string {
+  color: #ce9178;
+}
+
+.editor-code-number {
+  color: #b5cea8;
+}
+
+.editor-code-function {
+  color: #dcdcaa;
+}
+
+.editor-code-variable {
+  color: #9cdcfe;
+}
+
+.editor-code-operator {
+  color: #d4d4d4;
+}
+
+.editor-code-punctuation {
+  color: #d4d4d4;
+}
+
+/* LTR/RTL */
+.editor-ltr {
+  text-align: left;
+}
+
+.editor-rtl {
+  text-align: right;
+}
+
+/* Image styles */
+.editor-image {
+  max-width: 100%;
+  cursor: default;
+}
+
+/* Embed block */
+.editor-embed-block {
+  user-select: none;
+}
+
+.editor-embed-block-focus {
+  outline: 2px solid #2196f3;
 }
