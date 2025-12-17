@@ -4,7 +4,7 @@
  */
 import { useCallback, useRef, useEffect } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import type { SerializedEditorState, EditorState } from 'lexical';
+import type { SerializedEditorState } from 'lexical';
 import { performanceMonitor, METRIC_NAMES, PERFORMANCE_TARGETS } from '../utils/performance';
 
 export interface UseAutoSaveOptions {

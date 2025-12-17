@@ -211,6 +211,7 @@ const EditorInner = memo(function EditorInner({
       const timer = setTimeout(() => setIsCommentPanelOpen(true), 300);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [showCommentPanel]);
 
   return (

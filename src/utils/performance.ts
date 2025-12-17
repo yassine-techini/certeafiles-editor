@@ -78,14 +78,14 @@ class PerformanceMonitor {
    */
   private setupWebVitals(): void {
     // Dynamic import of web-vitals library
-    import('web-vitals').then(({ onCLS, onFCP, onFID, onINP, onLCP, onTTFB }) => {
+    // Note: onFID was removed in web-vitals v4+, replaced by onINP
+    import('web-vitals').then(({ onCLS, onFCP, onINP, onLCP, onTTFB }) => {
       const handleVital = (metric: WebVitalsMetric) => {
         this.recordWebVital(metric);
       };
 
       onCLS(handleVital as (metric: WebVitalsMetric) => void);
       onFCP(handleVital as (metric: WebVitalsMetric) => void);
-      onFID(handleVital as (metric: WebVitalsMetric) => void);
       onINP(handleVital as (metric: WebVitalsMetric) => void);
       onLCP(handleVital as (metric: WebVitalsMetric) => void);
       onTTFB(handleVital as (metric: WebVitalsMetric) => void);
@@ -203,13 +203,18 @@ class PerformanceMonitor {
     const duration = performance.now() - startTime;
     this.marks.delete(name);
 
-    this.recordMetric({
+    const metric: CustomMetric = {
       name,
       value: duration,
       timestamp: Date.now(),
-      target,
-      metadata,
-    });
+    };
+    if (target !== undefined) {
+      metric.target = target;
+    }
+    if (metadata !== undefined) {
+      metric.metadata = metadata;
+    }
+    this.recordMetric(metric);
 
     return duration;
   }
