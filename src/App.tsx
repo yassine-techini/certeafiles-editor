@@ -2,19 +2,51 @@
  * Certeafiles Editor Application
  * Per Constitution Section 9.1 - Architecture Finale
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import type { EditorState, LexicalEditor } from 'lexical';
 
-import { CerteafilesEditor } from './components/Editor';
+import { CerteafilesEditor, ZoomControl } from './components/Editor';
+import { FolioPanel } from './components/Folios';
+import { HeaderFooterTestPanel } from './components/HeaderFooter';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useFolioStore } from './stores';
+import { useFolioThumbnails } from './hooks';
 import { A4_CONSTANTS } from './utils/a4-constants';
+import type { Orientation } from './utils/a4-constants';
 
 function App(): JSX.Element {
   const [wordCount, setWordCount] = useState(0);
+  const [zoom, setZoom] = useState<number>(A4_CONSTANTS.ZOOM_DEFAULT);
+  const editorRef = useRef<LexicalEditor | null>(null);
+
+  // Folio store state and actions
+  const activeFolioId = useFolioStore((state) => state.activeFolioId);
+  const activeFolio = useFolioStore((state) => state.getActiveFolio());
+  const { initialize, toggleOrientation } = useFolioStore.getState();
+
+  // Thumbnail generation hook
+  const { thumbnails, generateThumbnail } = useFolioThumbnails({
+    debounceMs: 500,
+    autoUpdate: true,
+  });
+
+  // Initialize folio store on mount
+  useEffect(() => {
+    console.log('[App] Initializing folio store');
+    initialize();
+  }, [initialize]);
+
+  // Get orientation from active folio
+  const orientation: Orientation = activeFolio?.orientation ?? 'portrait';
 
   // Handle editor changes
   const handleEditorChange = useCallback(
-    (editorState: EditorState, _editor: LexicalEditor) => {
+    (editorState: EditorState, editor: LexicalEditor) => {
+      // Store editor reference for thumbnail generation
+      if (!editorRef.current) {
+        editorRef.current = editor;
+      }
+
       editorState.read(() => {
         // Count words in the editor
         const text = editorState.read(() => {
@@ -27,73 +59,77 @@ function App(): JSX.Element {
         const words = text.trim().split(/\s+/).filter(Boolean).length;
         setWordCount(words);
       });
+
+      // Update thumbnail for active folio
+      if (activeFolioId && editorRef.current) {
+        generateThumbnail(activeFolioId, editorRef.current);
+      }
     },
-    []
+    [activeFolioId, generateThumbnail]
+  );
+
+  // Handle toggling folio orientation
+  const handleToggleOrientation = useCallback(
+    (id: string) => {
+      toggleOrientation(id);
+      console.log('[App] Toggled orientation for folio:', id);
+    },
+    [toggleOrientation]
   );
 
   return (
     <div className="flex h-screen w-full bg-gray-100">
-      {/* Left Panel - Folios (200px) */}
-      <aside className="w-[200px] bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-700">Folios</h2>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {/* Folio thumbnail placeholder */}
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 mb-2">
-            <div
-              className="bg-white shadow-sm rounded border border-gray-200 mx-auto"
-              style={{
-                width: '100px',
-                height: '141px',
-              }}
-            >
-              <div className="h-full flex items-center justify-center text-gray-300 text-xs">
-                Page 1
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="p-2 border-t border-gray-200">
-          <button
-            type="button"
-            className="w-full py-2 px-4 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors"
-          >
-            + Add Folio
-          </button>
-        </div>
-      </aside>
+      {/* Left Panel - Folio Thumbnails */}
+      <FolioPanel thumbnails={thumbnails} width={200} />
 
       {/* Main Editor Area */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Toolbar */}
-        <div className="h-12 bg-white border-b border-gray-200 flex items-center px-4 gap-4">
+        {/* Header Bar */}
+        <div className="h-10 bg-white border-b border-gray-200 flex items-center px-4 gap-4">
           <span className="text-sm font-medium text-gray-700">
             Certeafiles Editor
           </span>
-          <div className="flex items-center gap-2 ml-4">
-            <button
-              type="button"
-              className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-              title="Bold (Ctrl+B)"
-            >
-              <strong>B</strong>
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-              title="Italic (Ctrl+I)"
-            >
-              <em>I</em>
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-              title="Underline (Ctrl+U)"
-            >
-              <u>U</u>
-            </button>
+
+          {/* Orientation Toggle (for active folio) */}
+          {activeFolioId && (
+            <div className="flex items-center gap-1 ml-4 border-l border-gray-300 pl-4">
+              <button
+                type="button"
+                onClick={() => handleToggleOrientation(activeFolioId)}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  orientation === 'portrait'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+                title="Portrait orientation"
+              >
+                Portrait
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleOrientation(activeFolioId)}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  orientation === 'landscape'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+                title="Landscape orientation"
+              >
+                Landscape
+              </button>
+            </div>
+          )}
+
+          {/* Zoom Controls */}
+          <div className="ml-4 border-l border-gray-300 pl-4">
+            <ZoomControl
+              zoom={zoom}
+              onZoomChange={setZoom}
+              showSlider={true}
+              showPercentage={true}
+            />
           </div>
+
           <span className="text-xs text-gray-400 ml-auto">
             {wordCount} words | A4: {A4_CONSTANTS.WIDTH_PX}×{A4_CONSTANTS.HEIGHT_PX}px
           </span>
@@ -111,24 +147,18 @@ function App(): JSX.Element {
             <CerteafilesEditor
               placeholder="Start typing your document... Use Ctrl+B for bold, Ctrl+I for italic, Ctrl+U for underline."
               onChange={handleEditorChange}
+              orientation={orientation}
+              zoom={zoom}
               className="mx-auto"
             />
           </ErrorBoundary>
         </div>
       </main>
 
-      {/* Right Panel - Comments (320px) */}
+      {/* Right Panel - Header/Footer Test (320px) */}
       <aside className="w-[320px] bg-white border-l border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-700">Comments</h2>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="text-center text-gray-400 text-sm mt-8">
-            <p className="mb-2">No comments yet</p>
-            <p className="text-xs text-gray-300">
-              Select text and click "Add Comment" to start a discussion
-            </p>
-          </div>
+        <div className="flex-1 overflow-y-auto">
+          <HeaderFooterTestPanel />
         </div>
         <div className="p-4 border-t border-gray-200">
           <div className="text-xs text-gray-400">

@@ -26,6 +26,17 @@ binding = "R2_ASSETS"
 bucket_name = "certeafiles-assets"
 
 # =============================================================================
+# Durable Objects Binding (for Yjs collaboration)
+# Note: For Pages, Durable Objects require a separate Worker deployment
+# The collaboration endpoint will proxy to this Worker when deployed
+# =============================================================================
+# Uncomment when deploying separate YJS Worker:
+# [[durable_objects.bindings]]
+# name = "YJS_SERVER"
+# class_name = "YjsServer"
+# script_name = "certeafiles-yjs-server"
+
+# =============================================================================
 # Environment Variables (non-sensitive)
 # =============================================================================
 [vars]
@@ -49,6 +60,12 @@ database_id = "9600c88a-ac17-4d2b-8d1e-b4ae2b8e6dae"
 [[env.preview.r2_buckets]]
 binding = "R2_ASSETS"
 bucket_name = "certeafiles-assets"
+
+# Preview Durable Objects binding (requires separate Worker)
+# [[env.preview.durable_objects.bindings]]
+# name = "YJS_SERVER"
+# class_name = "YjsServer"
+# script_name = "certeafiles-yjs-server"
 
 [env.preview.vars]
 ENVIRONMENT = "preview"

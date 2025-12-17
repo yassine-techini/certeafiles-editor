@@ -22,6 +22,17 @@
   box-sizing: border-box;
 }
 
+/* Smooth scroll behavior for scroll sync */
+.overflow-auto,
+.overflow-y-auto {
+  scroll-behavior: smooth;
+}
+
+/* Disable smooth scroll during rapid interactions */
+.scroll-instant {
+  scroll-behavior: auto !important;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -142,22 +153,96 @@ body {
   border-collapse: collapse;
   width: 100%;
   margin: 16px 0;
+  table-layout: fixed;
+  overflow: hidden;
 }
 
 .editor-table-row {
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid #d1d5db;
 }
 
 .editor-table-cell {
-  border: 1px solid #e0e0e0;
+  border: 1px solid #d1d5db;
   padding: 8px 12px;
   text-align: left;
   vertical-align: top;
+  min-width: 50px;
+  position: relative;
+  outline: none;
+  transition: background-color 0.15s ease;
+}
+
+.editor-table-cell:focus {
+  outline: none;
+}
+
+.editor-table-cell p {
+  margin: 0;
 }
 
 .editor-table-cell-header {
-  background-color: #f5f5f5;
+  background-color: #f3f4f6;
   font-weight: 600;
+  color: #374151;
+}
+
+/* Table cell resizer */
+.editor-table-cell-resizer {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background-color: transparent;
+  z-index: 10;
+}
+
+.editor-table-cell-resizer:hover {
+  background-color: #3b82f6;
+}
+
+/* Table add row/column buttons */
+.editor-table-add-rows {
+  position: absolute;
+  bottom: -20px;
+  left: 0;
+  right: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background-color: #f3f4f6;
+  border: 1px dashed #9ca3af;
+  border-top: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.editor-table:hover .editor-table-add-rows {
+  opacity: 1;
+}
+
+.editor-table-add-columns {
+  position: absolute;
+  right: -20px;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background-color: #f3f4f6;
+  border: 1px dashed #9ca3af;
+  border-left: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.editor-table:hover .editor-table-add-columns {
+  opacity: 1;
 }
 
 /* Links */
@@ -296,11 +381,43 @@ body {
 
 /* Table selection */
 .editor-table-cell-selected {
-  background-color: #e3f2fd;
+  background-color: #dbeafe !important;
+  caret-color: #1d4ed8;
 }
 
 .editor-table-selected {
-  outline: 2px solid #2196f3;
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Table cell hover */
+.editor-table-cell:hover {
+  background-color: #f9fafb;
+}
+
+/* Table row hover */
+.editor-table-row:hover .editor-table-cell:not(.editor-table-cell-selected) {
+  background-color: #f9fafb;
+}
+
+/* First row (header) specific styles */
+.editor-table-row:first-child .editor-table-cell {
+  border-top-width: 2px;
+}
+
+/* First column styles */
+.editor-table-cell:first-child {
+  border-left-width: 2px;
+}
+
+/* Last column styles */
+.editor-table-cell:last-child {
+  border-right-width: 2px;
+}
+
+/* Last row styles */
+.editor-table-row:last-child .editor-table-cell {
+  border-bottom-width: 2px;
 }
 
 /* Code syntax highlighting */
@@ -358,4 +475,149 @@ body {
 
 .editor-embed-block-focus {
   outline: 2px solid #2196f3;
+}
+
+/* Folio Page Styles */
+.folio-page {
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+  page-break-after: always;
+}
+
+.folio-page:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.folio-page:focus-within {
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+}
+
+/* Portrait orientation */
+.folio-page[data-folio-orientation="portrait"] {
+  width: 794px;
+  min-height: 1123px;
+}
+
+/* Landscape orientation */
+.folio-page[data-folio-orientation="landscape"] {
+  width: 1123px;
+  min-height: 794px;
+}
+
+/* Folio page number indicator */
+.folio-page::before {
+  content: "Page " attr(data-folio-index);
+  position: absolute;
+  top: -24px;
+  left: 0;
+  font-size: 12px;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.folio-page:hover::before {
+  opacity: 1;
+}
+
+/* Active folio indicator */
+.folio-page.active {
+  box-shadow: 0 0 0 2px #3b82f6, 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+/* Folio content area */
+.folio-page > p:first-child {
+  margin-top: 0;
+}
+
+.folio-page > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Multi-folio container */
+.folio-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 32px;
+}
+
+/* Print styles for folios */
+@media print {
+  .folio-page {
+    box-shadow: none;
+    margin-bottom: 0;
+    page-break-after: always;
+  }
+
+  .folio-page:last-child {
+    page-break-after: auto;
+  }
+
+  .folio-page::before {
+    display: none;
+  }
+}
+
+/* Comment highlight styles */
+.comment-highlight {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.comment-highlight:hover {
+  filter: brightness(0.95);
+}
+
+/* Comment highlight pulse animation */
+@keyframes comment-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.comment-highlight-pulse {
+  animation: comment-pulse 0.5s ease-in-out 3;
+}
+
+/* Comment type specific styles */
+.comment-remark {
+  background-color: #f3f4f6;
+  border-bottom: 2px solid #6b7280;
+}
+
+.comment-question {
+  background-color: #dbeafe;
+  border-bottom: 2px solid #3b82f6;
+}
+
+.comment-suggestion {
+  background-color: #dcfce7;
+  border-bottom: 2px solid #22c55e;
+}
+
+.comment-correction {
+  background-color: #fef3c7;
+  border-bottom: 2px solid #f59e0b;
+}
+
+.comment-validation {
+  background-color: #d1fae5;
+  border-bottom: 2px solid #10b981;
+}
+
+.comment-blocker {
+  background-color: #fee2e2;
+  border-bottom: 2px solid #ef4444;
 }

@@ -1,0 +1,23 @@
+# Yjs Collaboration Server Worker Configuration
+# This Worker handles real-time collaboration via Durable Objects
+# Deploy separately: cd workers && wrangler deploy
+
+name = "certeafiles-yjs-server"
+main = "yjs-server.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects configuration
+[durable_objects]
+bindings = [
+  { name = "YJS_SERVER", class_name = "YjsServer" }
+]
+
+# Migration for Durable Objects
+[[migrations]]
+tag = "v1"
+new_classes = ["YjsServer"]
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"

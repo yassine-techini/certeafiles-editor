@@ -1,0 +1,114 @@
+/**
+ * CollaboratorCursors styles
+ * Per Constitution Section 7 - Collaboration
+ */
+
+.collaborator-cursors-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 100;
+}
+
+/* Selection highlight */
+.collaborator-selection {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* Cursor caret */
+.collaborator-cursor {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-1px);
+}
+
+.collaborator-cursor.visible {
+  opacity: 1;
+}
+
+.collaborator-cursor.inactive {
+  animation: cursor-fade 2s ease-in-out infinite;
+}
+
+@keyframes cursor-fade {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Cursor line */
+.collaborator-cursor__line {
+  width: 2px;
+  border-radius: 1px;
+  animation: cursor-blink 1s ease-in-out infinite;
+}
+
+.collaborator-cursor.inactive .collaborator-cursor__line {
+  animation: none;
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* User label */
+.collaborator-cursor__label {
+  position: absolute;
+  top: -20px;
+  left: -1px;
+  padding: 2px 6px;
+  border-radius: 4px 4px 4px 0;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transform-origin: bottom left;
+  animation: label-appear 0.15s ease-out;
+}
+
+@keyframes label-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.collaborator-cursor__label-text {
+  display: block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hide label when inactive */
+.collaborator-cursor.inactive .collaborator-cursor__label {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Hover effects - show label on inactive cursors when hovering near */
+.collaborator-cursor:hover .collaborator-cursor__label {
+  opacity: 1;
+  transform: scale(1);
+}

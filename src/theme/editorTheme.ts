@@ -122,6 +122,9 @@ export const editorTheme: EditorThemeClasses = {
     base: 'editor-embed-block',
     focus: 'editor-embed-block-focus',
   },
+
+  // Folio (page) node
+  folio: 'folio-page',
 };
 
 /**

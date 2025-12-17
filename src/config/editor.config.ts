@@ -11,6 +11,17 @@ import { TableNode, TableCellNode, TableRowNode } from '@lexical/table';
 import { HorizontalRuleNode } from '@lexical/react/LexicalHorizontalRuleNode';
 
 import { editorTheme } from '../theme';
+import { ImageNode } from '../nodes/ImageNode';
+import { FolioNode } from '../nodes/FolioNode';
+import { HeaderNode } from '../nodes/HeaderNode';
+import { FooterNode } from '../nodes/FooterNode';
+import { PageNumberNode } from '../nodes/PageNumberNode.tsx';
+import { SlotNode } from '../nodes/SlotNode';
+import { CommentNode } from '../nodes/CommentNode';
+import { MentionNode } from '../nodes/MentionNode';
+import { DynamicFieldNode } from '../nodes/DynamicFieldNode';
+import { InsertionNode } from '../nodes/InsertionNode';
+import { DeletionNode } from '../nodes/DeletionNode';
 import { A4_CONSTANTS } from '../utils/a4-constants';
 
 /**
@@ -66,16 +77,19 @@ export const EDITOR_NODES: Array<Klass<LexicalNode>> = [
   // Horizontal rule
   HorizontalRuleNode,
 
-  // Custom nodes will be added here as they are implemented:
-  // FolioNode,
-  // SlotNode,
-  // HeaderNode,
-  // FooterNode,
-  // PageNumberNode,
-  // ImageNode,
-  // MentionNode,
-  // InsertionNode,
-  // DeletionNode,
+  // Custom nodes
+  ImageNode,
+  FolioNode,
+  HeaderNode,
+  FooterNode,
+  PageNumberNode,
+  SlotNode,
+  CommentNode,
+  MentionNode,
+  DynamicFieldNode,
+  InsertionNode,
+  DeletionNode,
+
 ];
 
 /**
