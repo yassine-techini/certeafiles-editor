@@ -1,46 +1,53 @@
 /**
- * Revision Store - Zustand state management for track changes
+ * Revision Store - Zustand state management for document versions
  * Per Constitution Section 6 - Track Changes
+ *
+ * New approach: Version-based system with snapshots instead of per-character tracking
  */
 import { create } from 'zustand';
-import { devtools, subscribeWithSelector } from 'zustand/middleware';
+import { devtools, subscribeWithSelector, persist } from 'zustand/middleware';
 import {
-  type Revision,
   type RevisionAuthor,
-  type RevisionType,
   type TrackChangesViewMode,
   generateRevisionId,
   DEFAULT_AUTHOR,
 } from '../types/revision';
 
 /**
+ * Document version (snapshot)
+ */
+export interface DocumentVersion {
+  id: string;
+  label: string;
+  content: string; // Serialized editor state JSON
+  author: RevisionAuthor;
+  createdAt: Date;
+  isAutoSave: boolean;
+}
+
+/**
  * Revision store state and actions
  */
 export interface RevisionState {
   // Data
-  revisions: Map<string, Revision>;
+  versions: Map<string, DocumentVersion>;
   trackingEnabled: boolean;
   viewMode: TrackChangesViewMode;
   currentAuthor: RevisionAuthor;
   showDeletions: boolean;
+  activeVersionId: string | null;
 
-  // Getters
-  getRevision: (id: string) => Revision | undefined;
-  getPendingRevisions: () => Revision[];
-  getRevisionsByType: (type: RevisionType) => Revision[];
-  getRevisionsByAuthor: (authorId: string) => Revision[];
-  getRevisionByNodeKey: (nodeKey: string) => Revision | undefined;
+  // Version getters
+  getVersion: (id: string) => DocumentVersion | undefined;
+  getAllVersions: () => DocumentVersion[];
+  getVersionCount: () => number;
   getRevisionCount: () => { total: number; pending: number; accepted: number; rejected: number };
 
-  // Actions
-  addRevision: (revision: Omit<Revision, 'id' | 'createdAt' | 'status'>) => string;
-  removeRevision: (id: string) => void;
-  acceptRevision: (id: string) => void;
-  rejectRevision: (id: string) => void;
-  acceptAll: () => void;
-  rejectAll: () => void;
-  acceptByAuthor: (authorId: string) => void;
-  rejectByAuthor: (authorId: string) => void;
+  // Version actions
+  addVersion: (data: { label: string; content: string; author: RevisionAuthor; isAutoSave?: boolean }) => string;
+  deleteVersion: (id: string) => void;
+  restoreVersion: (id: string) => DocumentVersion | undefined;
+  setActiveVersion: (id: string | null) => void;
 
   // Tracking control
   enableTracking: () => void;
@@ -51,215 +58,181 @@ export interface RevisionState {
   setCurrentAuthor: (author: RevisionAuthor) => void;
 
   // Utility
-  updateRevisionNodeKey: (id: string, nodeKey: string) => void;
-  clearAll: () => void;
+  clearAllVersions: () => void;
 }
 
 /**
- * Create the revision store
+ * Create the revision store with persistence
  */
 export const useRevisionStore = create<RevisionState>()(
   devtools(
-    subscribeWithSelector((set, get) => ({
-      // Initial state
-      revisions: new Map(),
-      trackingEnabled: false,
-      viewMode: 'all_markup',
-      currentAuthor: DEFAULT_AUTHOR,
-      showDeletions: true,
+    subscribeWithSelector(
+      persist(
+        (set, get) => ({
+          // Initial state
+          versions: new Map(),
+          trackingEnabled: false,
+          viewMode: 'all_markup',
+          currentAuthor: DEFAULT_AUTHOR,
+          showDeletions: true,
+          activeVersionId: null,
 
-      // Getters
-      getRevision: (id: string) => {
-        return get().revisions.get(id);
-      },
+          // Version getters
+          getVersion: (id: string) => {
+            return get().versions.get(id);
+          },
 
-      getPendingRevisions: () => {
-        return Array.from(get().revisions.values()).filter(
-          (r) => r.status === 'pending'
-        );
-      },
+          getAllVersions: () => {
+            return Array.from(get().versions.values()).sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          },
 
-      getRevisionsByType: (type: RevisionType) => {
-        return Array.from(get().revisions.values()).filter(
-          (r) => r.type === type
-        );
-      },
+          getVersionCount: () => {
+            return get().versions.size;
+          },
 
-      getRevisionsByAuthor: (authorId: string) => {
-        return Array.from(get().revisions.values()).filter(
-          (r) => r.author.id === authorId
-        );
-      },
+          // For backward compatibility with UI
+          getRevisionCount: () => {
+            const count = get().versions.size;
+            return {
+              total: count,
+              pending: count,
+              accepted: 0,
+              rejected: 0,
+            };
+          },
 
-      getRevisionByNodeKey: (nodeKey: string) => {
-        return Array.from(get().revisions.values()).find(
-          (r) => r.nodeKey === nodeKey
-        );
-      },
+          // Version actions
+          addVersion: ({ label, content, author, isAutoSave = false }) => {
+            const id = generateRevisionId();
+            const version: DocumentVersion = {
+              id,
+              label,
+              content,
+              author,
+              createdAt: new Date(),
+              isAutoSave,
+            };
 
-      getRevisionCount: () => {
-        const revisions = Array.from(get().revisions.values());
-        return {
-          total: revisions.length,
-          pending: revisions.filter((r) => r.status === 'pending').length,
-          accepted: revisions.filter((r) => r.status === 'accepted').length,
-          rejected: revisions.filter((r) => r.status === 'rejected').length,
-        };
-      },
+            set((state) => {
+              const newVersions = new Map(state.versions);
+              newVersions.set(id, version);
 
-      // Actions
-      addRevision: (revisionData) => {
-        const id = generateRevisionId();
-        const revision: Revision = {
-          ...revisionData,
-          id,
-          status: 'pending',
-          createdAt: new Date(),
-        };
+              // Keep only last 50 versions to prevent memory issues
+              if (newVersions.size > 50) {
+                const sortedVersions = Array.from(newVersions.entries()).sort(
+                  ([, a], [, b]) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                );
+                const versionsToKeep = sortedVersions.slice(0, 50);
+                return { versions: new Map(versionsToKeep) };
+              }
 
-        set((state) => {
-          const newRevisions = new Map(state.revisions);
-          newRevisions.set(id, revision);
-          return { revisions: newRevisions };
-        });
+              return { versions: newVersions };
+            });
 
-        console.log('[RevisionStore] Added revision:', id, revision.type);
-        return id;
-      },
+            console.log('[RevisionStore] Added version:', id, label);
+            return id;
+          },
 
-      removeRevision: (id: string) => {
-        set((state) => {
-          const newRevisions = new Map(state.revisions);
-          newRevisions.delete(id);
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Removed revision:', id);
-      },
+          deleteVersion: (id: string) => {
+            set((state) => {
+              const newVersions = new Map(state.versions);
+              newVersions.delete(id);
 
-      acceptRevision: (id: string) => {
-        set((state) => {
-          const revision = state.revisions.get(id);
-          if (!revision) return state;
+              // Clear active version if deleted
+              const newActiveId = state.activeVersionId === id ? null : state.activeVersionId;
 
-          const newRevisions = new Map(state.revisions);
-          newRevisions.set(id, { ...revision, status: 'accepted' });
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Accepted revision:', id);
-      },
+              return { versions: newVersions, activeVersionId: newActiveId };
+            });
+            console.log('[RevisionStore] Deleted version:', id);
+          },
 
-      rejectRevision: (id: string) => {
-        set((state) => {
-          const revision = state.revisions.get(id);
-          if (!revision) return state;
-
-          const newRevisions = new Map(state.revisions);
-          newRevisions.set(id, { ...revision, status: 'rejected' });
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Rejected revision:', id);
-      },
-
-      acceptAll: () => {
-        set((state) => {
-          const newRevisions = new Map(state.revisions);
-          newRevisions.forEach((revision, id) => {
-            if (revision.status === 'pending') {
-              newRevisions.set(id, { ...revision, status: 'accepted' });
+          restoreVersion: (id: string) => {
+            const version = get().versions.get(id);
+            if (version) {
+              set({ activeVersionId: id });
+              console.log('[RevisionStore] Restoring version:', id);
             }
-          });
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Accepted all pending revisions');
-      },
+            return version;
+          },
 
-      rejectAll: () => {
-        set((state) => {
-          const newRevisions = new Map(state.revisions);
-          newRevisions.forEach((revision, id) => {
-            if (revision.status === 'pending') {
-              newRevisions.set(id, { ...revision, status: 'rejected' });
-            }
-          });
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Rejected all pending revisions');
-      },
+          setActiveVersion: (id: string | null) => {
+            set({ activeVersionId: id });
+          },
 
-      acceptByAuthor: (authorId: string) => {
-        set((state) => {
-          const newRevisions = new Map(state.revisions);
-          newRevisions.forEach((revision, id) => {
-            if (revision.author.id === authorId && revision.status === 'pending') {
-              newRevisions.set(id, { ...revision, status: 'accepted' });
-            }
-          });
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Accepted revisions by author:', authorId);
-      },
+          // Tracking control
+          enableTracking: () => {
+            set({ trackingEnabled: true });
+            console.log('[RevisionStore] Tracking enabled');
+          },
 
-      rejectByAuthor: (authorId: string) => {
-        set((state) => {
-          const newRevisions = new Map(state.revisions);
-          newRevisions.forEach((revision, id) => {
-            if (revision.author.id === authorId && revision.status === 'pending') {
-              newRevisions.set(id, { ...revision, status: 'rejected' });
-            }
-          });
-          return { revisions: newRevisions };
-        });
-        console.log('[RevisionStore] Rejected revisions by author:', authorId);
-      },
+          disableTracking: () => {
+            set({ trackingEnabled: false });
+            console.log('[RevisionStore] Tracking disabled');
+          },
 
-      // Tracking control
-      enableTracking: () => {
-        set({ trackingEnabled: true });
-        console.log('[RevisionStore] Tracking enabled');
-      },
+          toggleTracking: () => {
+            const newValue = !get().trackingEnabled;
+            set({ trackingEnabled: newValue });
+            console.log('[RevisionStore] Tracking toggled:', newValue);
+          },
 
-      disableTracking: () => {
-        set({ trackingEnabled: false });
-        console.log('[RevisionStore] Tracking disabled');
-      },
+          setViewMode: (mode: TrackChangesViewMode) => {
+            set({ viewMode: mode });
+            console.log('[RevisionStore] View mode set to:', mode);
+          },
 
-      toggleTracking: () => {
-        set((state) => ({ trackingEnabled: !state.trackingEnabled }));
-        console.log('[RevisionStore] Tracking toggled:', !get().trackingEnabled);
-      },
+          setShowDeletions: (show: boolean) => {
+            set({ showDeletions: show });
+            console.log('[RevisionStore] Show deletions:', show);
+          },
 
-      setViewMode: (mode: TrackChangesViewMode) => {
-        set({ viewMode: mode });
-        console.log('[RevisionStore] View mode set to:', mode);
-      },
+          setCurrentAuthor: (author: RevisionAuthor) => {
+            set({ currentAuthor: author });
+            console.log('[RevisionStore] Current author set to:', author.name);
+          },
 
-      setShowDeletions: (show: boolean) => {
-        set({ showDeletions: show });
-        console.log('[RevisionStore] Show deletions:', show);
-      },
-
-      setCurrentAuthor: (author: RevisionAuthor) => {
-        set({ currentAuthor: author });
-        console.log('[RevisionStore] Current author set to:', author.name);
-      },
-
-      // Utility
-      updateRevisionNodeKey: (id: string, nodeKey: string) => {
-        set((state) => {
-          const revision = state.revisions.get(id);
-          if (!revision) return state;
-
-          const newRevisions = new Map(state.revisions);
-          newRevisions.set(id, { ...revision, nodeKey });
-          return { revisions: newRevisions };
-        });
-      },
-
-      clearAll: () => {
-        set({ revisions: new Map() });
-        console.log('[RevisionStore] Cleared all revisions');
-      },
-    })),
+          // Utility
+          clearAllVersions: () => {
+            set({ versions: new Map(), activeVersionId: null });
+            console.log('[RevisionStore] Cleared all versions');
+          },
+        }),
+        {
+          name: 'certeafiles-versions',
+          // Custom serialization for Map
+          storage: {
+            getItem: (name) => {
+              const str = localStorage.getItem(name);
+              if (!str) return null;
+              const parsed = JSON.parse(str);
+              // Convert versions array back to Map
+              if (parsed.state?.versions) {
+                parsed.state.versions = new Map(parsed.state.versions);
+              }
+              return parsed;
+            },
+            setItem: (name, value) => {
+              // Convert Map to array for storage
+              const toStore = {
+                ...value,
+                state: {
+                  ...value.state,
+                  versions: Array.from(value.state.versions.entries()),
+                },
+              };
+              localStorage.setItem(name, JSON.stringify(toStore));
+            },
+            removeItem: (name) => localStorage.removeItem(name),
+          },
+          partialize: (state) => ({
+            versions: state.versions,
+            currentAuthor: state.currentAuthor,
+          } as unknown as RevisionState),
+        }
+      )
+    ),
     { name: 'revision-store' }
   )
 );

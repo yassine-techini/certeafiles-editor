@@ -38,6 +38,8 @@ export interface FolioSortableListProps {
   onDelete: (folioId: string) => void;
   /** Lock toggle handler */
   onToggleLock: (folioId: string, currentLocked: boolean) => void;
+  /** Status toggle handler */
+  onToggleStatus?: (folioId: string) => void;
 }
 
 /**
@@ -51,6 +53,7 @@ export function FolioSortableList({
   onRotate,
   onDelete,
   onToggleLock,
+  onToggleStatus,
 }: FolioSortableListProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -109,12 +112,14 @@ export function FolioSortableList({
                 orientation={folio.orientation}
                 isActive={folio.id === activeFolioId}
                 isLocked={folio.locked}
+                status={folio.status}
                 thumbnailDataUrl={thumbnail?.dataUrl ?? null}
                 previewText={thumbnail?.previewText ?? ''}
                 onClick={() => onFolioClick(folio.id)}
                 onRotate={() => onRotate(folio.id)}
                 onDelete={() => onDelete(folio.id)}
                 onToggleLock={() => onToggleLock(folio.id, folio.locked)}
+                onToggleStatus={() => onToggleStatus?.(folio.id)}
                 canDelete={folios.length > 1}
                 disabled={folio.locked}
               />
@@ -133,12 +138,14 @@ export function FolioSortableList({
               orientation={activeFolio.orientation}
               isActive={true}
               isLocked={activeFolio.locked}
+              status={activeFolio.status}
               thumbnailDataUrl={activeThumbnail?.dataUrl ?? null}
               previewText={activeThumbnail?.previewText ?? ''}
               onClick={() => {}}
               onRotate={() => {}}
               onDelete={() => {}}
               onToggleLock={() => {}}
+              onToggleStatus={() => {}}
               canDelete={false}
             />
           </div>

@@ -1,20 +1,20 @@
 /**
- * TrackChangesPlugin - Plugin for tracking document changes
+ * TrackChangesPlugin - Plugin for real-time track changes
  * Per Constitution Section 6 - Track Changes
+ *
+ * Intercepts text modifications to create InsertionNode and DeletionNode
+ * for visual tracking of document changes.
  */
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $getSelection,
   $isRangeSelection,
-  $getRoot,
   $isTextNode,
-  $createTextNode,
+  $getRoot,
+  $isElementNode,
   COMMAND_PRIORITY_CRITICAL,
-  CONTROLLED_TEXT_INSERTION_COMMAND,
-  DELETE_CHARACTER_COMMAND,
-  DELETE_WORD_COMMAND,
-  DELETE_LINE_COMMAND,
+  COMMAND_PRIORITY_HIGH,
   KEY_BACKSPACE_COMMAND,
   KEY_DELETE_COMMAND,
   createCommand,
@@ -22,23 +22,24 @@ import {
 } from 'lexical';
 import type { LexicalCommand, LexicalNode } from 'lexical';
 import { mergeRegister } from '@lexical/utils';
-
-import {
-  $createInsertionNode,
-  $isInsertionNode,
-} from '../nodes/InsertionNode';
-import {
-  $createDeletionNode,
-  $isDeletionNode,
-} from '../nodes/DeletionNode';
 import { useRevisionStore } from '../stores/revisionStore';
+import { $isInsertionNode } from '../nodes/InsertionNode';
+import { $createDeletionNode, $isDeletionNode } from '../nodes/DeletionNode';
 import { generateRevisionId } from '../types/revision';
 
 /**
- * Commands for track changes
+ * Commands for track changes management
  */
 export const TOGGLE_TRACK_CHANGES_COMMAND: LexicalCommand<void> = createCommand(
   'TOGGLE_TRACK_CHANGES_COMMAND'
+);
+
+export const SAVE_VERSION_COMMAND: LexicalCommand<string | undefined> = createCommand(
+  'SAVE_VERSION_COMMAND'
+);
+
+export const RESTORE_VERSION_COMMAND: LexicalCommand<string> = createCommand(
+  'RESTORE_VERSION_COMMAND'
 );
 
 export const ACCEPT_REVISION_COMMAND: LexicalCommand<string> = createCommand(
@@ -62,28 +63,30 @@ export interface TrackChangesPluginProps {
   enabled?: boolean | undefined;
   /** Initial tracking state */
   initialTracking?: boolean | undefined;
+  /** Auto-save interval in ms (0 to disable) */
+  autoSaveInterval?: number;
 }
 
 /**
- * TrackChangesPlugin - Intercepts text changes and creates revision nodes
+ * TrackChangesPlugin - Real-time tracking of insertions and deletions
  */
 export function TrackChangesPlugin({
   enabled = true,
   initialTracking = false,
+  autoSaveInterval = 0,
 }: TrackChangesPluginProps): null {
   const [editor] = useLexicalComposerContext();
   const {
     trackingEnabled,
     currentAuthor,
-    addRevision,
     enableTracking,
     toggleTracking,
-    acceptRevision,
-    rejectRevision,
-    acceptAll,
-    rejectAll,
-    showDeletions,
+    addVersion,
+    restoreVersion,
   } = useRevisionStore();
+
+  // Track if we're currently processing a change to avoid infinite loops
+  const isProcessingRef = useRef(false);
 
   // Set initial tracking state
   useEffect(() => {
@@ -93,310 +96,347 @@ export function TrackChangesPlugin({
   }, [initialTracking, enableTracking]);
 
   /**
-   * Handle text insertion when tracking is enabled
+   * Save current editor state as a version
    */
-  const handleTextInsertion = useCallback(
-    (text: string): boolean => {
-      if (!trackingEnabled || !enabled) return false;
+  const handleSaveVersion = useCallback(
+    (label?: string) => {
+      const editorState = editor.getEditorState();
+      const serializedState = JSON.stringify(editorState.toJSON());
 
-      editor.update(() => {
-        const selection = $getSelection();
-        if (!$isRangeSelection(selection)) return;
-
-        // Generate revision ID
-        const revisionId = generateRevisionId();
-
-        // If there's a selection, first handle the deletion
-        if (!selection.isCollapsed()) {
-          const selectedText = selection.getTextContent();
-          if (selectedText) {
-            // Create deletion node for selected text
-            const deletionRevisionId = generateRevisionId();
-            const deletionNode = $createDeletionNode({
-              text: selectedText,
-              revisionId: deletionRevisionId,
-              author: currentAuthor,
-            });
-
-            // Add deletion to store
-            addRevision({
-              type: 'deletion',
-              content: selectedText,
-              author: currentAuthor,
-              nodeKey: deletionNode.getKey(),
-              originalContent: selectedText,
-            });
-
-            // Insert deletion node at start of selection
-            selection.insertNodes([deletionNode]);
-          }
-        }
-
-        // Create insertion node for the new text
-        const insertionNode = $createInsertionNode({
-          text,
-          revisionId,
-          author: currentAuthor,
-        });
-
-        // Add insertion to store
-        addRevision({
-          type: 'insertion',
-          content: text,
-          author: currentAuthor,
-          nodeKey: insertionNode.getKey(),
-        });
-
-        // Insert the node
-        selection.insertNodes([insertionNode]);
+      addVersion({
+        label: label || `Version ${new Date().toLocaleString('fr-FR')}`,
+        content: serializedState,
+        author: currentAuthor,
       });
 
-      return true;
+      console.log('[TrackChangesPlugin] Version saved:', label);
     },
-    [editor, trackingEnabled, enabled, currentAuthor, addRevision]
+    [editor, currentAuthor, addVersion]
   );
 
   /**
-   * Handle text deletion when tracking is enabled
+   * Restore a previous version
    */
-  const handleDeletion = useCallback(
-    (isBackward: boolean): boolean => {
-      if (!trackingEnabled || !enabled) return false;
+  const handleRestoreVersion = useCallback(
+    (versionId: string) => {
+      const version = restoreVersion(versionId);
+      if (!version) {
+        console.warn('[TrackChangesPlugin] Version not found:', versionId);
+        return;
+      }
 
-      let handled = false;
+      try {
+        const parsedState = JSON.parse(version.content);
+        const newEditorState = editor.parseEditorState(parsedState);
 
-      editor.update(() => {
-        const selection = $getSelection();
-        if (!$isRangeSelection(selection)) return;
-
-        // Get text to delete
-        let textToDelete = '';
-        let nodeToProcess: TextNode | null = null;
-
-        if (selection.isCollapsed()) {
-          // Get the character/word to delete
-          const anchor = selection.anchor;
-          const anchorNode = anchor.getNode();
-
-          if ($isTextNode(anchorNode)) {
-            const textContent = anchorNode.getTextContent();
-            const offset = anchor.offset;
-
-            if (isBackward) {
-              // Backspace
-              if (offset > 0) {
-                textToDelete = textContent.charAt(offset - 1);
-                nodeToProcess = anchorNode;
-              }
-            } else {
-              // Delete
-              if (offset < textContent.length) {
-                textToDelete = textContent.charAt(offset);
-                nodeToProcess = anchorNode;
-              }
-            }
-          }
-        } else {
-          // Selection exists
-          textToDelete = selection.getTextContent();
-        }
-
-        if (!textToDelete) return;
-
-        // If deleting from an InsertionNode that's pending, just remove the text
-        if (nodeToProcess && $isInsertionNode(nodeToProcess)) {
-          // Let the normal deletion happen for insertion nodes
-          return;
-        }
-
-        // If deleting from a DeletionNode, don't do anything
-        if (nodeToProcess && $isDeletionNode(nodeToProcess)) {
-          handled = true;
-          return;
-        }
-
-        // Create deletion node for the text
-        const revisionId = generateRevisionId();
-        const deletionNode = $createDeletionNode({
-          text: textToDelete,
-          revisionId,
-          author: currentAuthor,
-        });
-
-        // Add to store
-        addRevision({
-          type: 'deletion',
-          content: textToDelete,
-          author: currentAuthor,
-          nodeKey: deletionNode.getKey(),
-          originalContent: textToDelete,
-        });
-
-        if (selection.isCollapsed() && nodeToProcess) {
-          // Single character deletion
-          const textContent = nodeToProcess.getTextContent();
-          const offset = selection.anchor.offset;
-
-          if (isBackward && offset > 0) {
-            // Split and insert deletion node
-            const beforeText = textContent.slice(0, offset - 1);
-            const afterText = textContent.slice(offset);
-
-            if (beforeText) {
-              const beforeNode = $createTextNode(beforeText);
-              nodeToProcess.insertBefore(beforeNode);
-            }
-            nodeToProcess.insertBefore(deletionNode);
-            if (afterText) {
-              nodeToProcess.setTextContent(afterText);
-            } else {
-              nodeToProcess.remove();
-            }
-          } else if (!isBackward && offset < textContent.length) {
-            const beforeText = textContent.slice(0, offset);
-            const afterText = textContent.slice(offset + 1);
-
-            if (beforeText) {
-              const beforeNode = $createTextNode(beforeText);
-              nodeToProcess.insertBefore(beforeNode);
-            }
-            nodeToProcess.insertBefore(deletionNode);
-            if (afterText) {
-              nodeToProcess.setTextContent(afterText);
-            } else {
-              nodeToProcess.remove();
-            }
-          }
-        } else {
-          // Selection deletion - replace with deletion node
-          selection.insertNodes([deletionNode]);
-        }
-
-        handled = true;
-      });
-
-      return handled;
+        editor.setEditorState(newEditorState);
+        console.log('[TrackChangesPlugin] Version restored:', versionId);
+      } catch (error) {
+        console.error('[TrackChangesPlugin] Failed to restore version:', error);
+      }
     },
-    [editor, trackingEnabled, enabled, currentAuthor, addRevision]
+    [editor, restoreVersion]
   );
 
   /**
-   * Accept a revision - convert InsertionNode to TextNode, remove DeletionNode
+   * Accept a specific revision
    */
   const handleAcceptRevision = useCallback(
-    (revisionId: string) => {
+    (nodeKey: string) => {
       editor.update(() => {
-        const root = $getRoot();
-        const traverse = (node: LexicalNode) => {
-          if ($isInsertionNode(node) && node.getRevisionId() === revisionId) {
-            // Convert InsertionNode to regular TextNode
-            const textNode = $createTextNode(node.getTextContent());
-            textNode.setFormat(node.getFormat());
-            node.replace(textNode);
-          } else if ($isDeletionNode(node) && node.getRevisionId() === revisionId) {
-            // Remove DeletionNode entirely
-            node.remove();
-          }
+        const node = editor.getEditorState()._nodeMap.get(nodeKey);
+        if (!node) return;
 
-          if ('getChildren' in node && typeof node.getChildren === 'function') {
-            const children = (node as { getChildren: () => LexicalNode[] }).getChildren();
-            children.forEach(traverse);
-          }
-        };
-        traverse(root);
+        if ($isInsertionNode(node)) {
+          // Convert InsertionNode to regular TextNode
+          const text = node.getTextContent();
+          const textNode = new TextNode(text);
+          node.replace(textNode);
+        } else if ($isDeletionNode(node)) {
+          // Remove DeletionNode completely
+          node.remove();
+        }
       });
-
-      acceptRevision(revisionId);
     },
-    [editor, acceptRevision]
+    [editor]
   );
 
   /**
-   * Reject a revision - remove InsertionNode, restore DeletionNode content
+   * Reject a specific revision
    */
   const handleRejectRevision = useCallback(
-    (revisionId: string) => {
+    (nodeKey: string) => {
       editor.update(() => {
-        const root = $getRoot();
-        const traverse = (node: LexicalNode) => {
-          if ($isInsertionNode(node) && node.getRevisionId() === revisionId) {
-            // Remove InsertionNode entirely
-            node.remove();
-          } else if ($isDeletionNode(node) && node.getRevisionId() === revisionId) {
-            // Convert DeletionNode back to regular TextNode
-            const textNode = $createTextNode(node.getTextContent());
-            textNode.setFormat(node.getFormat());
-            node.replace(textNode);
-          }
+        const node = editor.getEditorState()._nodeMap.get(nodeKey);
+        if (!node) return;
 
-          if ('getChildren' in node && typeof node.getChildren === 'function') {
-            const children = (node as { getChildren: () => LexicalNode[] }).getChildren();
-            children.forEach(traverse);
-          }
-        };
-        traverse(root);
+        if ($isInsertionNode(node)) {
+          // Remove InsertionNode (reject the insertion)
+          node.remove();
+        } else if ($isDeletionNode(node)) {
+          // Convert DeletionNode back to regular TextNode (reject the deletion)
+          const text = node.getTextContent();
+          const textNode = new TextNode(text);
+          node.replace(textNode);
+        }
       });
-
-      rejectRevision(revisionId);
     },
-    [editor, rejectRevision]
+    [editor]
   );
 
   /**
    * Accept all revisions
    */
-  const handleAcceptAll = useCallback(() => {
+  const handleAcceptAllRevisions = useCallback(() => {
     editor.update(() => {
       const root = $getRoot();
-      const traverse = (node: LexicalNode) => {
+
+      const processNode = (node: LexicalNode) => {
         if ($isInsertionNode(node)) {
-          // Convert InsertionNode to regular TextNode
-          const textNode = $createTextNode(node.getTextContent());
-          textNode.setFormat(node.getFormat());
+          const text = node.getTextContent();
+          const textNode = new TextNode(text);
           node.replace(textNode);
         } else if ($isDeletionNode(node)) {
-          // Remove DeletionNode entirely
           node.remove();
         }
+      };
 
-        if ('getChildren' in node && typeof node.getChildren === 'function') {
-          const children = (node as { getChildren: () => LexicalNode[] }).getChildren();
-          children.forEach(traverse);
+      const traverse = (node: LexicalNode) => {
+        if ($isElementNode(node)) {
+          const children = node.getChildren();
+          // Process in reverse to avoid index issues when removing nodes
+          [...children].reverse().forEach((child) => {
+            traverse(child);
+            processNode(child);
+          });
         }
       };
+
       traverse(root);
     });
-
-    acceptAll();
-  }, [editor, acceptAll]);
+  }, [editor]);
 
   /**
    * Reject all revisions
    */
-  const handleRejectAll = useCallback(() => {
+  const handleRejectAllRevisions = useCallback(() => {
     editor.update(() => {
       const root = $getRoot();
-      const traverse = (node: LexicalNode) => {
+
+      const processNode = (node: LexicalNode) => {
         if ($isInsertionNode(node)) {
-          // Remove InsertionNode entirely
           node.remove();
         } else if ($isDeletionNode(node)) {
-          // Convert DeletionNode back to regular TextNode
-          const textNode = $createTextNode(node.getTextContent());
-          textNode.setFormat(node.getFormat());
+          const text = node.getTextContent();
+          const textNode = new TextNode(text);
           node.replace(textNode);
         }
+      };
 
-        if ('getChildren' in node && typeof node.getChildren === 'function') {
-          const children = (node as { getChildren: () => LexicalNode[] }).getChildren();
-          children.forEach(traverse);
+      const traverse = (node: LexicalNode) => {
+        if ($isElementNode(node)) {
+          const children = node.getChildren();
+          // Process in reverse to avoid index issues when removing nodes
+          [...children].reverse().forEach((child) => {
+            traverse(child);
+            processNode(child);
+          });
         }
       };
+
       traverse(root);
     });
+  }, [editor]);
 
-    rejectAll();
-  }, [editor, rejectAll]);
+  /**
+   * Auto-save versions at interval if tracking is enabled
+   */
+  useEffect(() => {
+    if (!enabled || !trackingEnabled || autoSaveInterval <= 0) return;
+
+    const intervalId = setInterval(() => {
+      handleSaveVersion('Auto-save');
+    }, autoSaveInterval);
+
+    return () => clearInterval(intervalId);
+  }, [enabled, trackingEnabled, autoSaveInterval, handleSaveVersion]);
+
+  /**
+   * Intercept backspace/delete to create DeletionNodes instead of removing text
+   */
+  useEffect(() => {
+    if (!enabled) return;
+
+    return mergeRegister(
+      // Handle backspace
+      editor.registerCommand(
+        KEY_BACKSPACE_COMMAND,
+        (event) => {
+          if (!trackingEnabled || isProcessingRef.current) return false;
+
+          const selection = $getSelection();
+          if (!$isRangeSelection(selection)) return false;
+
+          // If there's a selection, let default behavior handle it for now
+          if (!selection.isCollapsed()) return false;
+
+          const anchorNode = selection.anchor.getNode();
+          const anchorOffset = selection.anchor.offset;
+
+          // If at the start of a text node, we can't delete backwards
+          if (anchorOffset === 0) return false;
+
+          // If the node is already a revision node, let default behavior apply
+          if ($isInsertionNode(anchorNode) || $isDeletionNode(anchorNode)) {
+            return false;
+          }
+
+          if ($isTextNode(anchorNode)) {
+            event?.preventDefault();
+            isProcessingRef.current = true;
+
+            editor.update(() => {
+              const text = anchorNode.getTextContent();
+              const charToDelete = text[anchorOffset - 1];
+
+              // Create deletion node for the character
+              const deletionNode = $createDeletionNode({
+                text: charToDelete,
+                revisionId: generateRevisionId(),
+                author: currentAuthor,
+              });
+
+              // Split the text and insert deletion node
+              const beforeText = text.slice(0, anchorOffset - 1);
+              const afterText = text.slice(anchorOffset);
+
+              if (beforeText) {
+                anchorNode.setTextContent(beforeText);
+                anchorNode.insertAfter(deletionNode);
+                if (afterText) {
+                  const afterNode = new TextNode(afterText);
+                  deletionNode.insertAfter(afterNode);
+                }
+              } else {
+                // At the start, replace with deletion + after
+                anchorNode.setTextContent(charToDelete);
+                const newDeletionNode = $createDeletionNode({
+                  text: charToDelete,
+                  revisionId: generateRevisionId(),
+                  author: currentAuthor,
+                });
+                anchorNode.replace(newDeletionNode);
+                if (afterText) {
+                  const afterNode = new TextNode(afterText);
+                  newDeletionNode.insertAfter(afterNode);
+                  afterNode.select(0, 0);
+                }
+              }
+
+              isProcessingRef.current = false;
+            });
+
+            return true;
+          }
+
+          return false;
+        },
+        COMMAND_PRIORITY_HIGH
+      ),
+
+      // Handle delete key
+      editor.registerCommand(
+        KEY_DELETE_COMMAND,
+        (event) => {
+          if (!trackingEnabled || isProcessingRef.current) return false;
+
+          const selection = $getSelection();
+          if (!$isRangeSelection(selection)) return false;
+
+          // If there's a selection, let default behavior handle it for now
+          if (!selection.isCollapsed()) return false;
+
+          const anchorNode = selection.anchor.getNode();
+          const anchorOffset = selection.anchor.offset;
+
+          // If the node is already a revision node, let default behavior apply
+          if ($isInsertionNode(anchorNode) || $isDeletionNode(anchorNode)) {
+            return false;
+          }
+
+          if ($isTextNode(anchorNode)) {
+            const text = anchorNode.getTextContent();
+
+            // If at the end of the text, can't delete forward
+            if (anchorOffset >= text.length) return false;
+
+            event?.preventDefault();
+            isProcessingRef.current = true;
+
+            editor.update(() => {
+              const charToDelete = text[anchorOffset];
+
+              // Create deletion node for the character
+              const deletionNode = $createDeletionNode({
+                text: charToDelete,
+                revisionId: generateRevisionId(),
+                author: currentAuthor,
+              });
+
+              // Split the text and insert deletion node
+              const beforeText = text.slice(0, anchorOffset);
+              const afterText = text.slice(anchorOffset + 1);
+
+              anchorNode.setTextContent(beforeText || '');
+
+              if (beforeText) {
+                anchorNode.insertAfter(deletionNode);
+              } else {
+                anchorNode.replace(deletionNode);
+              }
+
+              if (afterText) {
+                const afterNode = new TextNode(afterText);
+                deletionNode.insertAfter(afterNode);
+              }
+
+              isProcessingRef.current = false;
+            });
+
+            return true;
+          }
+
+          return false;
+        },
+        COMMAND_PRIORITY_HIGH
+      )
+    );
+  }, [editor, enabled, trackingEnabled, currentAuthor]);
+
+  /**
+   * Listen for text insertions to create InsertionNodes
+   */
+  useEffect(() => {
+    if (!enabled) return;
+
+    return editor.registerNodeTransform(TextNode, (textNode) => {
+      if (!trackingEnabled || isProcessingRef.current) return;
+
+      // Skip if this is already a revision node
+      if ($isInsertionNode(textNode) || $isDeletionNode(textNode)) return;
+
+      // Check if the text node was just created/modified
+      // We use a simple heuristic: if the node is dirty and has content
+      const isDirty = textNode.isDirty();
+
+      if (isDirty) {
+        // For now, we don't automatically convert all text to InsertionNodes
+        // as that would be too aggressive. The tracking mainly focuses on
+        // deletions. Insertions are handled through explicit commands.
+        // This can be enhanced later with more sophisticated change detection.
+      }
+    });
+  }, [editor, enabled, trackingEnabled, currentAuthor]);
 
   /**
    * Register command handlers
@@ -405,76 +445,6 @@ export function TrackChangesPlugin({
     if (!enabled) return;
 
     return mergeRegister(
-      // Text insertion
-      editor.registerCommand(
-        CONTROLLED_TEXT_INSERTION_COMMAND,
-        (payload) => {
-          if (!trackingEnabled) return false;
-          const text = typeof payload === 'string' ? payload : String(payload);
-          return handleTextInsertion(text);
-        },
-        COMMAND_PRIORITY_CRITICAL
-      ),
-
-      // Backspace
-      editor.registerCommand(
-        KEY_BACKSPACE_COMMAND,
-        (event) => {
-          if (!trackingEnabled) return false;
-          const handled = handleDeletion(true);
-          if (handled && event) {
-            event.preventDefault();
-          }
-          return handled;
-        },
-        COMMAND_PRIORITY_CRITICAL
-      ),
-
-      // Delete key
-      editor.registerCommand(
-        KEY_DELETE_COMMAND,
-        (event) => {
-          if (!trackingEnabled) return false;
-          const handled = handleDeletion(false);
-          if (handled && event) {
-            event.preventDefault();
-          }
-          return handled;
-        },
-        COMMAND_PRIORITY_CRITICAL
-      ),
-
-      // Delete character command
-      editor.registerCommand(
-        DELETE_CHARACTER_COMMAND,
-        (isBackward) => {
-          if (!trackingEnabled) return false;
-          return handleDeletion(isBackward);
-        },
-        COMMAND_PRIORITY_CRITICAL
-      ),
-
-      // Delete word command
-      editor.registerCommand(
-        DELETE_WORD_COMMAND,
-        (isBackward) => {
-          if (!trackingEnabled) return false;
-          return handleDeletion(isBackward);
-        },
-        COMMAND_PRIORITY_CRITICAL
-      ),
-
-      // Delete line command
-      editor.registerCommand(
-        DELETE_LINE_COMMAND,
-        (isBackward) => {
-          if (!trackingEnabled) return false;
-          return handleDeletion(isBackward);
-        },
-        COMMAND_PRIORITY_CRITICAL
-      ),
-
-      // Toggle track changes
       editor.registerCommand(
         TOGGLE_TRACK_CHANGES_COMMAND,
         () => {
@@ -484,41 +454,55 @@ export function TrackChangesPlugin({
         COMMAND_PRIORITY_CRITICAL
       ),
 
-      // Accept revision
+      editor.registerCommand(
+        SAVE_VERSION_COMMAND,
+        (label) => {
+          handleSaveVersion(label);
+          return true;
+        },
+        COMMAND_PRIORITY_CRITICAL
+      ),
+
+      editor.registerCommand(
+        RESTORE_VERSION_COMMAND,
+        (versionId) => {
+          handleRestoreVersion(versionId);
+          return true;
+        },
+        COMMAND_PRIORITY_CRITICAL
+      ),
+
       editor.registerCommand(
         ACCEPT_REVISION_COMMAND,
-        (revisionId) => {
-          handleAcceptRevision(revisionId);
+        (nodeKey) => {
+          handleAcceptRevision(nodeKey);
           return true;
         },
         COMMAND_PRIORITY_CRITICAL
       ),
 
-      // Reject revision
       editor.registerCommand(
         REJECT_REVISION_COMMAND,
-        (revisionId) => {
-          handleRejectRevision(revisionId);
+        (nodeKey) => {
+          handleRejectRevision(nodeKey);
           return true;
         },
         COMMAND_PRIORITY_CRITICAL
       ),
 
-      // Accept all
       editor.registerCommand(
         ACCEPT_ALL_REVISIONS_COMMAND,
         () => {
-          handleAcceptAll();
+          handleAcceptAllRevisions();
           return true;
         },
         COMMAND_PRIORITY_CRITICAL
       ),
 
-      // Reject all
       editor.registerCommand(
         REJECT_ALL_REVISIONS_COMMAND,
         () => {
-          handleRejectAll();
+          handleRejectAllRevisions();
           return true;
         },
         COMMAND_PRIORITY_CRITICAL
@@ -527,38 +511,55 @@ export function TrackChangesPlugin({
   }, [
     editor,
     enabled,
-    trackingEnabled,
-    handleTextInsertion,
-    handleDeletion,
     toggleTracking,
+    handleSaveVersion,
+    handleRestoreVersion,
     handleAcceptRevision,
     handleRejectRevision,
-    handleAcceptAll,
-    handleRejectAll,
+    handleAcceptAllRevisions,
+    handleRejectAllRevisions,
   ]);
 
   /**
-   * Update visibility of deletion nodes based on viewMode
+   * Apply view mode class to editor container
    */
   useEffect(() => {
-    editor.update(() => {
-      const root = $getRoot();
-      const traverse = (node: LexicalNode) => {
-        if ($isDeletionNode(node)) {
-          const element = editor.getElementByKey(node.getKey());
-          if (element) {
-            element.style.display = showDeletions ? 'inline' : 'none';
-          }
-        }
+    if (!enabled) return;
 
-        if ('getChildren' in node && typeof node.getChildren === 'function') {
-          const children = (node as { getChildren: () => LexicalNode[] }).getChildren();
-          children.forEach(traverse);
-        }
-      };
-      traverse(root);
-    });
-  }, [editor, showDeletions]);
+    const { viewMode, showDeletions } = useRevisionStore.getState();
+
+    const updateViewMode = () => {
+      const editorElement = editor.getRootElement()?.closest('.certeafiles-editor-container');
+      if (!editorElement) return;
+
+      editorElement.classList.remove(
+        'track-changes-final',
+        'track-changes-original',
+        'track-changes-hide-deletions'
+      );
+
+      if (viewMode === 'no_markup') {
+        editorElement.classList.add('track-changes-final');
+      } else if (viewMode === 'original') {
+        editorElement.classList.add('track-changes-original');
+      }
+
+      if (!showDeletions) {
+        editorElement.classList.add('track-changes-hide-deletions');
+      }
+    };
+
+    // Initial application
+    updateViewMode();
+
+    // Subscribe to store changes
+    const unsubscribe = useRevisionStore.subscribe(
+      (state) => ({ viewMode: state.viewMode, showDeletions: state.showDeletions }),
+      updateViewMode
+    );
+
+    return unsubscribe;
+  }, [editor, enabled]);
 
   return null;
 }

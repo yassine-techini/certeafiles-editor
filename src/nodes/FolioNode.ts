@@ -203,8 +203,17 @@ export class FolioNode extends ElementNode {
     div.style.position = 'relative';
     div.style.overflow = 'hidden';
 
-    // Default padding (margins)
-    div.style.padding = `${A4_CONSTANTS.MARGIN_TOP * A4_CONSTANTS.MM_TO_PX}px`;
+    // Use flexbox for header-content-footer layout
+    div.style.display = 'flex';
+    div.style.flexDirection = 'column';
+
+    // Default padding (margins) - only horizontal, vertical handled by header/footer
+    const marginPx = A4_CONSTANTS.MARGIN_TOP * A4_CONSTANTS.MM_TO_PX;
+    div.style.paddingLeft = `${marginPx}px`;
+    div.style.paddingRight = `${marginPx}px`;
+    div.style.paddingTop = '0';
+    div.style.paddingBottom = '0';
+    div.style.boxSizing = 'border-box';
 
     return div;
   }

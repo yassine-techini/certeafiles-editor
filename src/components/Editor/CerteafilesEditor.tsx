@@ -2,7 +2,7 @@
  * CerteafilesEditor - Main WYSIWYG Editor Component
  * Per Constitution Section 2.4
  */
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useState } from 'react';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
@@ -29,15 +29,22 @@ import { HeaderFooterPlugin } from '../../plugins/HeaderFooterPlugin';
 import { PageNumberingPlugin } from '../../plugins/PageNumberingPlugin';
 import { SlotPlugin } from '../../plugins/SlotPlugin';
 import { CommentPlugin } from '../../plugins/CommentPlugin';
-import { HeaderFooterEditor } from '../HeaderFooter/HeaderFooterEditor';
-import { AlignedCommentPanel } from '../Comments/AlignedCommentPanel';
-import { RevisionPanel } from '../Revisions/RevisionPanel';
-import { CREATE_COMMENT_COMMAND } from '../../plugins/CommentPlugin';
+import { CommentPanel } from '../Comments/CommentPanel';
 import { CommentAlignmentPlugin } from '../../plugins/CommentAlignmentPlugin';
+import { RevisionPanel } from '../Revisions/RevisionPanel';
 import { SlashMenuPlugin } from '../../plugins/SlashMenuPlugin';
 import { AtMenuPlugin } from '../../plugins/AtMenuPlugin';
 import { PlusMenuPlugin } from '../../plugins/PlusMenuPlugin';
 import { TrackChangesPlugin } from '../../plugins/TrackChangesPlugin';
+import { PDFBackgroundPlugin } from '../../plugins/PDFBackgroundPlugin';
+import { CollaborationPlugin } from '../../plugins/CollaborationPlugin';
+import { SpellCheckPlugin } from '../../plugins/SpellCheckPlugin';
+import { SpecialTablePlugin } from '../../plugins/SpecialTablePlugin';
+import { FootnotePlugin } from '../../plugins/FootnotePlugin';
+import { SymbolPickerPlugin } from '../../plugins/SymbolPickerPlugin';
+import { ExportPlugin } from '../../plugins/ExportPlugin';
+import { QueryBuilderPlugin } from '../../plugins/QueryBuilderPlugin';
+import type { CollaborationUser, ConnectionStatus, CollaborationState } from '../../types/collaboration';
 import { createEditorConfig } from '../../config';
 import { A4_CONSTANTS } from '../../utils/a4-constants';
 import type { Orientation } from '../../utils/a4-constants';
@@ -73,6 +80,26 @@ export interface CerteafilesEditorProps {
   showToolbar?: boolean;
   /** Whether to show the comment panel */
   showCommentPanel?: boolean;
+  /** Whether to show the revision panel */
+  showRevisionPanel?: boolean;
+  /** Callback when revision panel toggle is requested */
+  onToggleRevisionPanel?: () => void;
+  /** Whether revision panel is open (controlled) */
+  isRevisionPanelOpen?: boolean;
+  /** Callback when comment button is clicked in floating toolbar */
+  onCommentClick?: () => void;
+  /** Enable real-time collaboration */
+  enableCollaboration?: boolean;
+  /** Collaboration room ID */
+  collaborationRoomId?: string;
+  /** Collaboration user info */
+  collaborationUser?: { id?: string; name?: string; color?: string };
+  /** Callback when collaboration status changes */
+  onCollaborationStatusChange?: (status: ConnectionStatus) => void;
+  /** Callback when collaboration users change */
+  onCollaborationUsersChange?: (users: CollaborationUser[]) => void;
+  /** Callback when collaboration state changes */
+  onCollaborationStateChange?: (state: CollaborationState) => void;
 }
 
 /**
@@ -89,6 +116,16 @@ function EditorInner({
   onChange,
   showToolbar,
   showCommentPanel,
+  showRevisionPanel,
+  onToggleRevisionPanel,
+  isRevisionPanelOpen,
+  onCommentClick,
+  enableCollaboration,
+  collaborationRoomId,
+  collaborationUser,
+  onCollaborationStatusChange,
+  onCollaborationUsersChange,
+  onCollaborationStateChange,
 }: {
   orientation: Orientation;
   zoom: number;
@@ -97,22 +134,23 @@ function EditorInner({
   onChange: ((editorState: EditorState, editor: LexicalEditor) => void) | undefined;
   showToolbar: boolean;
   showCommentPanel: boolean;
+  showRevisionPanel: boolean;
+  onToggleRevisionPanel: (() => void) | undefined;
+  isRevisionPanelOpen: boolean;
+  onCommentClick: (() => void) | undefined;
+  enableCollaboration: boolean;
+  collaborationRoomId: string | undefined;
+  collaborationUser: { id?: string; name?: string; color?: string } | undefined;
+  onCollaborationStatusChange: ((status: ConnectionStatus) => void) | undefined;
+  onCollaborationUsersChange: ((users: CollaborationUser[]) => void) | undefined;
+  onCollaborationStateChange: ((state: CollaborationState) => void) | undefined;
 }): JSX.Element {
   const [editor] = useLexicalComposerContext();
-
-  // Header/Footer Editor modal state
-  const [showHeaderFooterEditor, setShowHeaderFooterEditor] = useState(false);
 
   // Comment panel state
   const [isCommentPanelOpen, setIsCommentPanelOpen] = useState(showCommentPanel);
 
-  // Revision panel state
-  const [isRevisionPanelOpen, setIsRevisionPanelOpen] = useState(false);
-
-  // Editor container ref for alignment calculation
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-
-  // Force recalculation trigger
+  // Force recalculation trigger for comment alignment
   const [, setAlignmentTrigger] = useState(0);
   const triggerAlignmentRecalc = useCallback(() => {
     setAlignmentTrigger((n) => n + 1);
@@ -136,16 +174,6 @@ function EditorInner({
     }
   }, []);
 
-  // Handle new comment from panel
-  const handleNewComment = useCallback(() => {
-    const content = window.prompt('Enter your comment:');
-    if (content) {
-      editor.dispatchCommand(CREATE_COMMENT_COMMAND, {
-        content,
-        type: 'remark',
-      });
-    }
-  }, [editor]);
 
   // Handle scroll to thread
   const handleScrollToThread = useCallback(
@@ -166,117 +194,168 @@ function EditorInner({
     []
   );
 
+  // Calculate page width based on orientation
+  const pageWidth = orientation === 'landscape' ? 1123 : 794;
+
   return (
-    <div className="flex h-full">
-      <div ref={editorContainerRef} className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Editor Toolbar */}
-        {showToolbar && (
-          <EditorToolbar
-            onEditHeaderFooter={() => setShowHeaderFooterEditor(true)}
-            onToggleRevisionPanel={() => setIsRevisionPanelOpen(!isRevisionPanelOpen)}
-            isRevisionPanelOpen={isRevisionPanelOpen}
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Main content area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Editor content with toolbar - single scrollable area */}
+        <div className="flex-1 overflow-auto editor-scroll bg-slate-200">
+          {/* Centered content container */}
+          <div className="flex flex-col items-center">
+            {/* Toolbar - sticky at top, same width as pages */}
+            {showToolbar && (
+              <div
+                className="sticky top-0 z-20 pt-4 pb-2"
+                style={{
+                  width: `${pageWidth * zoom}px`,
+                  maxWidth: 'calc(100% - 48px)'
+                }}
+              >
+                <div className="bg-white rounded-xl shadow-lg border border-slate-200/60">
+                  <EditorToolbar />
+                </div>
+              </div>
+            )}
+
+            {/* Rich Text Editor with A4 ContentEditable */}
+            <RichTextPlugin
+              contentEditable={
+                <A4ContentEditable
+                  orientation={orientation}
+                  zoom={zoom}
+                  {...(margins && { margins })}
+                  placeholder={<A4Placeholder>{placeholder}</A4Placeholder>}
+                />
+              }
+              ErrorBoundary={LexicalErrorBoundary}
+            />
+          </div>
+        </div>
+
+        {/* Comment Panel - Google Docs style, only if enabled */}
+        {showCommentPanel && (
+          <CommentPanel
+            isOpen={isCommentPanelOpen}
+            onToggle={() => setIsCommentPanelOpen(!isCommentPanelOpen)}
+            onScrollToThread={handleScrollToThread}
+            editor={editor}
           />
         )}
 
-        {/* Rich Text Editor with A4 ContentEditable */}
-        <RichTextPlugin
-          contentEditable={
-            <A4ContentEditable
-              orientation={orientation}
-              zoom={zoom}
-              {...(margins && { margins })}
-              placeholder={<A4Placeholder>{placeholder}</A4Placeholder>}
-            />
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-        />
+        {/* Revision Panel - Track Changes, only if enabled */}
+        {showRevisionPanel && (
+          <RevisionPanel
+            isOpen={isRevisionPanelOpen}
+            onClose={() => onToggleRevisionPanel?.()}
+          />
+        )}
 
-        {/* A4 Layout Plugin */}
-        <A4LayoutPlugin
-          orientation={orientation}
-          zoom={zoom}
-          {...(margins && { margins })}
-        />
+      </div>
 
-        {/* Core Plugins */}
-        <HistoryPlugin />
-        <ListPlugin />
-        <CheckListPlugin />
-        <LinkPlugin validateUrl={validateUrl} />
-        <LexicalTablePlugin />
-        <TablePlugin showCellActions={true} />
-        <TabIndentationPlugin />
-        <HorizontalRulePlugin />
-        <ImagePlugin uploadEndpoint="/api/upload" />
+      {/* A4 Layout Plugin */}
+      <A4LayoutPlugin
+        orientation={orientation}
+        zoom={zoom}
+        {...(margins && { margins })}
+      />
 
-        {/* Floating Toolbar on Selection */}
-        <FloatingToolbarPlugin showInTables={true} />
+      {/* Core Plugins */}
+      <HistoryPlugin />
+      <ListPlugin />
+      <CheckListPlugin />
+      <LinkPlugin validateUrl={validateUrl} />
+      <LexicalTablePlugin />
+      <TablePlugin showCellActions={true} />
+      <TabIndentationPlugin />
+      <HorizontalRulePlugin />
+      <ImagePlugin uploadEndpoint="/api/upload" />
 
-        {/* Folio Plugin for multi-page support */}
-        <FolioPlugin autoSync={true} />
+      {/* Floating Toolbar on Selection */}
+      <FloatingToolbarPlugin showInTables={true} onCommentClick={onCommentClick} />
 
-        {/* Folio Scroll Sync Plugin for two-way synchronization */}
-        <FolioScrollSyncPlugin enabled={true} debounceMs={150} />
+      {/* Folio Plugin for multi-page support */}
+      <FolioPlugin autoSync={true} />
 
-        {/* Header/Footer Plugin for page headers and footers */}
-        <HeaderFooterPlugin autoInject={true} syncWithStore={true} />
+      {/* Folio Scroll Sync Plugin for two-way synchronization */}
+      <FolioScrollSyncPlugin enabled={true} debounceMs={150} />
 
-        {/* Page Numbering Plugin for calculating page numbers */}
-        <PageNumberingPlugin autoUpdate={true} debounceMs={100} />
+      {/* Header/Footer Plugin for page headers and footers */}
+      <HeaderFooterPlugin autoInject={true} syncWithStore={true} />
 
-        {/* Slot Plugin for dynamic variables */}
-        <SlotPlugin validateOnSave={true} />
+      {/* Page Numbering Plugin for calculating page numbers */}
+      <PageNumberingPlugin autoUpdate={true} debounceMs={100} />
 
-        {/* Comment Plugin for document commenting */}
-        <CommentPlugin />
+      {/* Slot Plugin for dynamic variables */}
+      <SlotPlugin validateOnSave={true} />
 
-        {/* Comment Alignment Plugin for position tracking */}
+      {/* Comment Plugin for document commenting - always loaded */}
+      <CommentPlugin />
+
+      {/* Comment Alignment Plugin for position tracking - only if panel shown */}
+      {showCommentPanel && (
         <CommentAlignmentPlugin
           onPositionsChange={triggerAlignmentRecalc}
           debounceMs={100}
           enabled={isCommentPanelOpen}
         />
+      )}
 
-        {/* Slash Menu Plugin for "/" commands */}
-        <SlashMenuPlugin enabled={true} />
+      {/* Slash Menu Plugin for "/" commands */}
+      <SlashMenuPlugin enabled={true} />
 
-        {/* At Menu Plugin for "@" mentions */}
-        <AtMenuPlugin enabled={true} />
+      {/* At Menu Plugin for "@" mentions */}
+      <AtMenuPlugin enabled={true} />
 
-        {/* Plus Menu Plugin for "+" dynamic fields */}
-        <PlusMenuPlugin enabled={true} />
+      {/* Plus Menu Plugin for "+" dynamic fields */}
+      <PlusMenuPlugin enabled={true} />
 
-        {/* Track Changes Plugin for revisions */}
-        <TrackChangesPlugin enabled={true} />
+      {/* Track Changes Plugin for revisions */}
+      <TrackChangesPlugin enabled={true} />
 
-        {/* Change Handler */}
-        {onChange && (
-          <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
-        )}
+      {/* Spell Check Plugin for multilingual spell checking */}
+      <SpellCheckPlugin enabled={true} />
 
-        {/* Header/Footer Editor Modal */}
-        <HeaderFooterEditor
-          isOpen={showHeaderFooterEditor}
-          onClose={() => setShowHeaderFooterEditor(false)}
-          folioId={null}
+      {/* Special Table Plugin for business tables */}
+      <SpecialTablePlugin />
+
+      {/* Footnote Plugin for page footnotes */}
+      <FootnotePlugin enabled={true} showPanel={true} />
+
+      {/* Symbol Picker Plugin for special characters */}
+      <SymbolPickerPlugin enabled={true} />
+
+      {/* Export Plugin for PDF and DOCX export */}
+      <ExportPlugin
+        enabled={true}
+        documentTitle="Document"
+        totalPages={1}
+      />
+
+      {/* Query Builder Plugin for visual SQL query building */}
+      <QueryBuilderPlugin enabled={true} />
+
+      {/* PDF Background Plugin for imported PDF pages */}
+      <PDFBackgroundPlugin />
+
+      {/* Collaboration Plugin for real-time editing */}
+      {enableCollaboration && collaborationRoomId && (
+        <CollaborationPlugin
+          roomId={collaborationRoomId}
+          user={collaborationUser}
+          enabled={enableCollaboration}
+          onStatusChange={onCollaborationStatusChange}
+          onUsersChange={onCollaborationUsersChange}
+          onStateChange={onCollaborationStateChange}
         />
-      </div>
+      )}
 
-      {/* Comment Panel with Alignment */}
-      <AlignedCommentPanel
-        isOpen={isCommentPanelOpen}
-        onToggle={() => setIsCommentPanelOpen(!isCommentPanelOpen)}
-        onNewComment={handleNewComment}
-        onScrollToThread={handleScrollToThread}
-        editorContainer={editorContainerRef.current}
-        onPositionsRecalculate={triggerAlignmentRecalc}
-      />
-
-      {/* Revision Panel */}
-      <RevisionPanel
-        isOpen={isRevisionPanelOpen}
-        onClose={() => setIsRevisionPanelOpen(false)}
-      />
+      {/* Change Handler */}
+      {onChange && (
+        <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
+      )}
     </div>
   );
 }
@@ -295,6 +374,16 @@ export function CerteafilesEditor({
   className = '',
   showToolbar = true,
   showCommentPanel = true,
+  showRevisionPanel = false,
+  onToggleRevisionPanel,
+  isRevisionPanelOpen = false,
+  onCommentClick,
+  enableCollaboration = false,
+  collaborationRoomId,
+  collaborationUser,
+  onCollaborationStatusChange,
+  onCollaborationUsersChange,
+  onCollaborationStateChange,
 }: CerteafilesEditorProps): JSX.Element {
   // Create editor configuration
   const editorConfig = createEditorConfig({ editable });
@@ -315,6 +404,16 @@ export function CerteafilesEditor({
           onChange={onChange}
           showToolbar={showToolbar}
           showCommentPanel={showCommentPanel}
+          showRevisionPanel={showRevisionPanel}
+          onToggleRevisionPanel={onToggleRevisionPanel}
+          isRevisionPanelOpen={isRevisionPanelOpen}
+          onCommentClick={onCommentClick}
+          enableCollaboration={enableCollaboration}
+          collaborationRoomId={collaborationRoomId}
+          collaborationUser={collaborationUser}
+          onCollaborationStatusChange={onCollaborationStatusChange}
+          onCollaborationUsersChange={onCollaborationUsersChange}
+          onCollaborationStateChange={onCollaborationStateChange}
         />
       </div>
     </LexicalComposer>

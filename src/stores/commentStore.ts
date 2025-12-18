@@ -17,6 +17,14 @@ import {
 } from '../types/comment';
 
 /**
+ * Pending comment state for Google Docs-like UX
+ */
+export interface PendingComment {
+  quotedText: string;
+  selectionKey: string;
+}
+
+/**
  * Comment store state interface
  */
 export interface CommentState {
@@ -28,6 +36,9 @@ export interface CommentState {
 
   // Current user for authoring
   currentUser: User | null;
+
+  // Pending comment (waiting for user input in side panel)
+  pendingComment: PendingComment | null;
 
   // Computed helpers
   getThread: (id: string) => CommentThread | undefined;
@@ -67,6 +78,11 @@ export interface CommentState {
   // User management
   setCurrentUser: (user: User | null) => void;
 
+  // Pending comment management
+  startPendingComment: (quotedText: string, selectionKey: string) => void;
+  cancelPendingComment: () => void;
+  submitPendingComment: (content: string, type?: CommentType) => string | null;
+
   // Bulk actions
   clear: () => void;
   resolveAllThreads: () => void;
@@ -82,6 +98,7 @@ export const useCommentStore = create<CommentState>()(
       threads: new Map<string, CommentThread>(),
       activeThreadId: null,
       currentUser: null,
+      pendingComment: null,
 
       // Computed helpers
       getThread: (id: string) => get().threads.get(id),
@@ -367,6 +384,53 @@ export const useCommentStore = create<CommentState>()(
       setCurrentUser: (user) => {
         set({ currentUser: user });
         console.log('[CommentStore] Set current user:', user?.name);
+      },
+
+      // Pending comment management
+      startPendingComment: (quotedText, selectionKey) => {
+        set({
+          pendingComment: { quotedText, selectionKey },
+        });
+        console.log('[CommentStore] Started pending comment for:', quotedText.slice(0, 50));
+      },
+
+      cancelPendingComment: () => {
+        set({ pendingComment: null });
+        console.log('[CommentStore] Cancelled pending comment');
+      },
+
+      submitPendingComment: (content, type = 'remark') => {
+        const { pendingComment, currentUser } = get();
+        if (!pendingComment) {
+          console.warn('[CommentStore] No pending comment to submit');
+          return null;
+        }
+        if (!currentUser) {
+          console.warn('[CommentStore] Cannot submit comment: no current user');
+          return null;
+        }
+
+        const id = uuidv4();
+        const thread = createThreadFromComment(
+          id,
+          currentUser,
+          content,
+          type,
+          pendingComment.quotedText
+        );
+
+        set((state) => {
+          const newThreads = new Map(state.threads);
+          newThreads.set(id, thread);
+          return {
+            threads: newThreads,
+            activeThreadId: id,
+            pendingComment: null,
+          };
+        });
+
+        console.log('[CommentStore] Submitted pending comment as thread:', id);
+        return id;
       },
 
       // Bulk actions

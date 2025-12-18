@@ -77,6 +77,18 @@ export interface HeaderFooterState {
   // Bulk actions
   clear: () => void;
   initialize: () => void;
+
+  // Reset to template defaults
+  resetDefaultHeaderToTemplate: () => void;
+  resetDefaultFooterToTemplate: () => void;
+  resetAllToTemplateDefaults: () => void;
+
+  // Propagation actions
+  propagateHeaderToAllFolios: () => void;
+  propagateFooterToAllFolios: () => void;
+  propagateAllToFolios: () => void;
+  getFoliosWithHeaderOverride: () => string[];
+  getFoliosWithFooterOverride: () => string[];
 }
 
 /**
@@ -463,6 +475,90 @@ export const useHeaderFooterStore = create<HeaderFooterState>()(
           defaultHeaderId: defaultHeader.id,
           defaultFooterId: defaultFooter.id,
         });
+      },
+
+      // Reset default header to template defaults
+      resetDefaultHeaderToTemplate: () => {
+        const { defaultHeaderId, headers } = get();
+        if (!defaultHeaderId) {
+          // No default set, initialize first
+          get().initialize();
+          return;
+        }
+
+        // Replace the default header content with fresh template
+        const newDefaultHeader = createDefaultHeader(defaultHeaderId);
+        const newHeaders = new Map(headers);
+        newHeaders.set(defaultHeaderId, newDefaultHeader);
+
+        set({ headers: newHeaders });
+        console.log('[HeaderFooterStore] Reset default header to template');
+      },
+
+      // Reset default footer to template defaults
+      resetDefaultFooterToTemplate: () => {
+        const { defaultFooterId, footers } = get();
+        if (!defaultFooterId) {
+          // No default set, initialize first
+          get().initialize();
+          return;
+        }
+
+        // Replace the default footer content with fresh template
+        const newDefaultFooter = createDefaultFooter(defaultFooterId);
+        const newFooters = new Map(footers);
+        newFooters.set(defaultFooterId, newDefaultFooter);
+
+        set({ footers: newFooters });
+        console.log('[HeaderFooterStore] Reset default footer to template');
+      },
+
+      // Reset all to template defaults
+      resetAllToTemplateDefaults: () => {
+        // Clear everything and reinitialize
+        set({
+          headers: new Map(),
+          footers: new Map(),
+          folioHeaders: new Map(),
+          folioFooters: new Map(),
+          defaultHeaderId: null,
+          defaultFooterId: null,
+        });
+
+        // Reinitialize with fresh defaults
+        get().initialize();
+        console.log('[HeaderFooterStore] Reset all to template defaults');
+      },
+
+      // Propagate header to all folios (remove all header overrides)
+      propagateHeaderToAllFolios: () => {
+        set({ folioHeaders: new Map() });
+        console.log('[HeaderFooterStore] Propagated header to all folios');
+      },
+
+      // Propagate footer to all folios (remove all footer overrides)
+      propagateFooterToAllFolios: () => {
+        set({ folioFooters: new Map() });
+        console.log('[HeaderFooterStore] Propagated footer to all folios');
+      },
+
+      // Propagate both header and footer to all folios
+      propagateAllToFolios: () => {
+        set({
+          folioHeaders: new Map(),
+          folioFooters: new Map(),
+        });
+        console.log('[HeaderFooterStore] Propagated all to folios');
+      },
+
+      // Get list of folio IDs with header overrides
+      getFoliosWithHeaderOverride: () => {
+        return Array.from(get().folioHeaders.keys());
+      },
+
+      // Get list of folio IDs with footer overrides
+      getFoliosWithFooterOverride: () => {
+        return Array.from(get().folioFooters.keys());
       },
     })),
     { name: 'header-footer-store' }

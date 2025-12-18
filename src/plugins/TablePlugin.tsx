@@ -12,7 +12,9 @@ import {
   COMMAND_PRIORITY_EDITOR,
   createCommand,
 } from 'lexical';
-import type { LexicalCommand } from 'lexical';
+import type { LexicalCommand, LexicalNode } from 'lexical';
+import { $isFolioNode } from '../nodes/FolioNode';
+import { $isFooterNode } from '../nodes/FooterNode';
 import {
   $createTableCellNode,
   $createTableNode,
@@ -25,7 +27,7 @@ import {
   $deleteTableRow__EXPERIMENTAL,
   TableCellHeaderStates,
 } from '@lexical/table';
-import { $insertNodeToNearestRoot, mergeRegister } from '@lexical/utils';
+import { mergeRegister } from '@lexical/utils';
 import {
   Grid3X3,
   Plus,
@@ -238,10 +240,38 @@ export function TablePlugin({
   } | null>(null);
   const [isInTable, setIsInTable] = useState(false);
 
+  // Helper function to find the FolioNode parent
+  const findFolioParent = (node: LexicalNode): LexicalNode | null => {
+    let current: LexicalNode | null = node;
+    while (current !== null) {
+      if ($isFolioNode(current)) {
+        return current;
+      }
+      current = current.getParent();
+    }
+    return null;
+  };
+
+  // Helper function to find the direct child of FolioNode that contains/is the given node
+  const findDirectFolioChild = (node: LexicalNode, folioNode: LexicalNode): LexicalNode | null => {
+    let current: LexicalNode | null = node;
+    while (current !== null) {
+      const parentNode: LexicalNode | null = current.getParent();
+      if (parentNode !== null && parentNode.is(folioNode)) {
+        return current;
+      }
+      current = parentNode;
+    }
+    return null;
+  };
+
   // Insert a new table
   const insertTable = useCallback(
     (rows: number, columns: number) => {
       editor.update(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) return;
+
         const tableNode = $createTableNode();
 
         for (let r = 0; r < rows; r++) {
@@ -259,7 +289,38 @@ export function TablePlugin({
           tableNode.append(rowNode);
         }
 
-        $insertNodeToNearestRoot(tableNode);
+        // Get the anchor node
+        const anchorNode = selection.anchor.getNode();
+
+        // Find the FolioNode that contains this selection
+        const folioNode = findFolioParent(anchorNode);
+
+        if (folioNode && $isFolioNode(folioNode)) {
+          // Find the direct child of the FolioNode where we should insert
+          const directChild = findDirectFolioChild(anchorNode, folioNode);
+
+          if (directChild) {
+            // If the direct child is a footer, insert before it
+            if ($isFooterNode(directChild)) {
+              directChild.insertBefore(tableNode);
+            } else {
+              // Insert after the current block
+              directChild.insertAfter(tableNode);
+            }
+          } else {
+            // Fallback: find footer and insert before it, or append to folio
+            const children = folioNode.getChildren();
+            const footerNode = children.find(child => $isFooterNode(child));
+            if (footerNode) {
+              footerNode.insertBefore(tableNode);
+            } else {
+              folioNode.append(tableNode);
+            }
+          }
+        } else {
+          // Fallback if not in a folio: insert at selection
+          selection.insertNodes([tableNode]);
+        }
       });
       setShowDialog(false);
     },

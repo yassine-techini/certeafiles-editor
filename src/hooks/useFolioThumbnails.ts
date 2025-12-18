@@ -1,10 +1,10 @@
 /**
  * useFolioThumbnails - Generate thumbnails from editor state
  * Per Constitution Section 4.1
+ * Creates accurate miniature representations of page content
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LexicalEditor, SerializedEditorState } from 'lexical';
-import { $getRoot } from 'lexical';
+import type { LexicalEditor } from 'lexical';
 import { useFolioStore } from '../stores/folioStore';
 import { THUMBNAIL_CONSTANTS } from '../utils/a4-constants';
 import type { FolioOrientation } from '../types/folio';
@@ -37,48 +37,210 @@ export interface UseFolioThumbnailsReturn {
 }
 
 /**
- * Extract text content from serialized editor state
+ * Generate thumbnail from DOM element
+ * Draws content at scaled positions matching the actual page layout
  */
-function extractTextFromEditorState(
-  editorState: SerializedEditorState | null
-): string {
-  if (!editorState || !editorState.root) return '';
+function generateThumbnailFromDOM(
+  element: HTMLElement,
+  orientation: FolioOrientation
+): { dataUrl: string; previewText: string } {
+  const isPortrait = orientation === 'portrait';
+  const dimensions = isPortrait
+    ? THUMBNAIL_CONSTANTS.PORTRAIT
+    : THUMBNAIL_CONSTANTS.LANDSCAPE;
 
-  const extractText = (node: Record<string, unknown>): string => {
-    let text = '';
+  // Create canvas with thumbnail dimensions
+  const canvas = document.createElement('canvas');
+  canvas.width = dimensions.WIDTH;
+  canvas.height = dimensions.HEIGHT;
 
-    if (node.text && typeof node.text === 'string') {
-      text += node.text;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return { dataUrl: '', previewText: '' };
+  }
+
+  // Get the actual dimensions of the folio element
+  const rect = element.getBoundingClientRect();
+  const sourceWidth = rect.width;
+  const sourceHeight = rect.height;
+
+  // Calculate scale to fit thumbnail
+  const scale = Math.min(
+    dimensions.WIDTH / sourceWidth,
+    dimensions.HEIGHT / sourceHeight
+  );
+
+  // Calculate offset to center the content
+  const scaledWidth = sourceWidth * scale;
+  const scaledHeight = sourceHeight * scale;
+  const offsetX = (dimensions.WIDTH - scaledWidth) / 2;
+  const offsetY = (dimensions.HEIGHT - scaledHeight) / 2;
+
+  // White background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw border
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(offsetX + 0.5, offsetY + 0.5, scaledWidth - 1, scaledHeight - 1);
+
+  // Draw header if present
+  const header = element.querySelector('header');
+  if (header) {
+    const headerRect = header.getBoundingClientRect();
+    const headerTop = (headerRect.top - rect.top) * scale + offsetY;
+    const headerHeight = headerRect.height * scale;
+
+    ctx.fillStyle = '#f9fafb';
+    ctx.fillRect(offsetX + 1, headerTop, scaledWidth - 2, headerHeight);
+
+    // Draw header border
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(offsetX + 1, headerTop + headerHeight);
+    ctx.lineTo(offsetX + scaledWidth - 1, headerTop + headerHeight);
+    ctx.stroke();
+
+    // Draw header text
+    const headerText = header.textContent?.trim() || '';
+    if (headerText) {
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = `${Math.max(3, 4 * scale)}px sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        headerText.slice(0, 50),
+        offsetX + 3,
+        headerTop + headerHeight / 2,
+        scaledWidth - 6
+      );
+    }
+  }
+
+  // Draw footer if present
+  const footer = element.querySelector('footer');
+  if (footer) {
+    const footerRect = footer.getBoundingClientRect();
+    const footerTop = (footerRect.top - rect.top) * scale + offsetY;
+    const footerHeight = footerRect.height * scale;
+
+    ctx.fillStyle = '#f9fafb';
+    ctx.fillRect(offsetX + 1, footerTop, scaledWidth - 2, footerHeight);
+
+    // Draw footer border
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(offsetX + 1, footerTop);
+    ctx.lineTo(offsetX + scaledWidth - 1, footerTop);
+    ctx.stroke();
+
+    // Draw footer text
+    const footerText = footer.textContent?.trim() || '';
+    if (footerText) {
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = `${Math.max(3, 4 * scale)}px sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        footerText.slice(0, 50),
+        offsetX + 3,
+        footerTop + footerHeight / 2,
+        scaledWidth - 6
+      );
+    }
+  }
+
+  // Get all text elements excluding header and footer
+  const textElements = Array.from(
+    element.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, span, td, th')
+  ).filter((el) => {
+    return !el.closest('header') && !el.closest('footer');
+  });
+
+  // Draw each text element at its scaled position
+  let previewText = '';
+
+  textElements.forEach((el) => {
+    const elRect = el.getBoundingClientRect();
+
+    // Skip elements outside the visible area
+    if (elRect.width === 0 || elRect.height === 0) return;
+
+    // Calculate scaled position relative to the folio
+    const elTop = (elRect.top - rect.top) * scale + offsetY;
+    const elLeft = (elRect.left - rect.left) * scale + offsetX;
+    const elWidth = elRect.width * scale;
+    const elHeight = elRect.height * scale;
+
+    // Skip if outside canvas bounds
+    if (elTop < offsetY || elTop > offsetY + scaledHeight) return;
+    if (elLeft < offsetX || elLeft > offsetX + scaledWidth) return;
+
+    const text = el.textContent?.trim() || '';
+    if (!text) return;
+
+    // Collect preview text
+    if (previewText.length < 200) {
+      previewText += text + ' ';
     }
 
-    if (node.children && Array.isArray(node.children)) {
-      for (const child of node.children) {
-        text += extractText(child as Record<string, unknown>);
-        // Add newline between block-level elements
-        if (
-          child &&
-          typeof child === 'object' &&
-          'type' in child &&
-          ['paragraph', 'heading', 'listitem'].includes(child.type as string)
-        ) {
-          text += '\n';
-        }
+    const tagName = el.tagName.toLowerCase();
+    const computed = window.getComputedStyle(el);
+
+    // Calculate font size - scale it proportionally
+    let fontSize = parseFloat(computed.fontSize) * scale;
+    fontSize = Math.max(2, Math.min(fontSize, 8)); // Clamp between 2 and 8px
+
+    // Style based on element type
+    if (tagName.startsWith('h')) {
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#111827';
+    } else {
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.fillStyle = computed.color || '#374151';
+    }
+
+    ctx.textBaseline = 'top';
+
+    // Draw the text with word wrapping
+    const words = text.split(/\s+/);
+    let line = '';
+    let currentY = elTop;
+    const lineHeight = fontSize * 1.3;
+    const maxWidth = elWidth - 2;
+    const maxY = elTop + elHeight;
+
+    for (const word of words) {
+      if (currentY > maxY) break;
+
+      const testLine = line ? `${line} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+
+      if (metrics.width > maxWidth && line) {
+        ctx.fillText(line, elLeft + 1, currentY, maxWidth);
+        line = word;
+        currentY += lineHeight;
+      } else {
+        line = testLine;
       }
     }
 
-    return text;
-  };
+    if (line && currentY <= maxY) {
+      ctx.fillText(line, elLeft + 1, currentY, maxWidth);
+    }
+  });
 
-  return extractText(editorState.root as Record<string, unknown>).trim();
+  return {
+    dataUrl: canvas.toDataURL('image/png'),
+    previewText: previewText.slice(0, 200).trim(),
+  };
 }
 
 /**
- * Generate thumbnail canvas from folio content
+ * Generate empty thumbnail canvas
  */
-function generateThumbnailCanvas(
-  text: string,
-  orientation: FolioOrientation
-): HTMLCanvasElement {
+function generateEmptyThumbnail(orientation: FolioOrientation): HTMLCanvasElement {
   const isPortrait = orientation === 'portrait';
   const dimensions = isPortrait
     ? THUMBNAIL_CONSTANTS.PORTRAIT
@@ -95,61 +257,10 @@ function generateThumbnailCanvas(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Draw text preview
-  if (text) {
-    ctx.fillStyle = '#374151';
-    ctx.font = '7px Inter, system-ui, sans-serif';
-    ctx.textBaseline = 'top';
-
-    const padding = 6;
-    const lineHeight = 9;
-    const maxWidth = canvas.width - padding * 2;
-
-    // Word wrap
-    const words = text.split(/\s+/);
-    const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const metrics = ctx.measureText(testLine);
-
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-
-    // Draw lines (limit to visible area)
-    const maxLines = Math.floor((canvas.height - padding * 2) / lineHeight);
-    lines.slice(0, maxLines).forEach((line, index) => {
-      ctx.fillText(line, padding, padding + index * lineHeight);
-    });
-
-    // Fade effect if truncated
-    if (lines.length > maxLines) {
-      const gradient = ctx.createLinearGradient(
-        0,
-        canvas.height - 20,
-        0,
-        canvas.height
-      );
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 1)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
-    }
-  } else {
-    // Empty page indicator
-    ctx.fillStyle = '#d1d5db';
-    ctx.font = '10px Inter, system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Empty', canvas.width / 2, canvas.height / 2);
-  }
+  // Border
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
 
   return canvas;
 }
@@ -168,39 +279,74 @@ export function useFolioThumbnails(
   // Get folios from store
   const folios = useFolioStore((state) => state.getFoliosInOrder());
 
-  // Generate thumbnail for a single folio
+  // Generate thumbnail for a single folio by capturing the DOM element
   const generateThumbnail = useCallback(
-    (folioId: string, editor: LexicalEditor) => {
+    (folioId: string, _editor: LexicalEditor) => {
       const folio = folios.find((f) => f.id === folioId);
       if (!folio) return;
 
-      // Get text content from editor state
-      let previewText = '';
-
-      if (folio.content) {
-        previewText = extractTextFromEditorState(folio.content);
-      } else {
-        // Try to get from current editor state
-        editor.getEditorState().read(() => {
-          const root = $getRoot();
-          previewText = root.getTextContent().trim();
+      // If this folio has a PDF page image, use it directly for thumbnail
+      if (folio.metadata?.pdfPageImage) {
+        setThumbnails((prev) => {
+          const next = new Map(prev);
+          next.set(folioId, {
+            folioId,
+            dataUrl: folio.metadata.pdfPageImage as string,
+            previewText: (folio.metadata.pdfTextContent as string)?.slice(0, 200) || '',
+            timestamp: Date.now(),
+          });
+          return next;
         });
+        return;
       }
 
-      // Generate canvas thumbnail
-      const canvas = generateThumbnailCanvas(previewText, folio.orientation);
-      const dataUrl = canvas.toDataURL('image/png');
+      // Find the DOM element for this folio
+      const folioElement = document.querySelector(
+        `[data-folio-id="${folioId}"]`
+      ) as HTMLElement;
 
-      setThumbnails((prev) => {
-        const next = new Map(prev);
-        next.set(folioId, {
-          folioId,
-          dataUrl,
-          previewText,
-          timestamp: Date.now(),
+      if (folioElement) {
+        try {
+          const result = generateThumbnailFromDOM(folioElement, folio.orientation);
+          setThumbnails((prev) => {
+            const next = new Map(prev);
+            next.set(folioId, {
+              folioId,
+              dataUrl: result.dataUrl,
+              previewText: result.previewText,
+              timestamp: Date.now(),
+            });
+            return next;
+          });
+        } catch (error) {
+          console.warn('[Thumbnail] Error generating thumbnail:', error);
+          // Use empty thumbnail on error
+          const canvas = generateEmptyThumbnail(folio.orientation);
+          setThumbnails((prev) => {
+            const next = new Map(prev);
+            next.set(folioId, {
+              folioId,
+              dataUrl: canvas.toDataURL('image/png'),
+              previewText: '',
+              timestamp: Date.now(),
+            });
+            return next;
+          });
+        }
+      } else {
+        // Fallback to empty thumbnail
+        const canvas = generateEmptyThumbnail(folio.orientation);
+        setThumbnails((prev) => {
+          const next = new Map(prev);
+          next.set(folioId, {
+            folioId,
+            dataUrl: canvas.toDataURL('image/png'),
+            previewText: '',
+            timestamp: Date.now(),
+          });
+          return next;
         });
-        return next;
-      });
+      }
     },
     [folios]
   );
@@ -239,10 +385,32 @@ export function useFolioThumbnails(
 
   // Generate initial thumbnails when folios change
   useEffect(() => {
-    // Create placeholder thumbnails for new folios
+    // Create thumbnails for new folios
     folios.forEach((folio) => {
-      if (!thumbnails.has(folio.id)) {
-        const canvas = generateThumbnailCanvas('', folio.orientation);
+      const existingThumbnail = thumbnails.get(folio.id);
+      const hasPdfImage = folio.metadata?.pdfPageImage;
+
+      // If folio has PDF image, always use it (even if we have an empty placeholder)
+      if (hasPdfImage) {
+        const pdfImage = folio.metadata.pdfPageImage as string;
+        const pdfText = (folio.metadata.pdfTextContent as string)?.slice(0, 200) || '';
+
+        // Only update if we don't have a thumbnail or if current thumbnail is empty/different
+        if (!existingThumbnail || !existingThumbnail.dataUrl?.includes('data:image/png')) {
+          setThumbnails((prev) => {
+            const next = new Map(prev);
+            next.set(folio.id, {
+              folioId: folio.id,
+              dataUrl: pdfImage,
+              previewText: pdfText,
+              timestamp: Date.now(),
+            });
+            return next;
+          });
+        }
+      } else if (!existingThumbnail) {
+        // No PDF image and no thumbnail - create empty placeholder
+        const canvas = generateEmptyThumbnail(folio.orientation);
         setThumbnails((prev) => {
           const next = new Map(prev);
           next.set(folio.id, {

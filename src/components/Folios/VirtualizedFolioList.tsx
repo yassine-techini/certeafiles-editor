@@ -24,7 +24,7 @@ import type { ThumbnailData } from '../../hooks/useFolioThumbnails';
 import type { Folio } from '../../types/folio';
 
 // Virtualization constants
-const ITEM_HEIGHT = 140; // Approximate height of each thumbnail item
+const ITEM_HEIGHT = 180; // Height of each thumbnail item (141px thumbnail + padding + compact icons + margins)
 const BUFFER_SIZE = 5; // Number of items to render above/below viewport
 const SCROLL_THRESHOLD = 50; // Pixels from edge to trigger pagination
 
@@ -43,6 +43,8 @@ export interface VirtualizedFolioListProps {
   onDelete: (folioId: string) => void;
   /** Lock toggle handler */
   onToggleLock: (folioId: string, currentLocked: boolean) => void;
+  /** Status toggle handler */
+  onToggleStatus: (folioId: string) => void;
   /** Container height */
   containerHeight?: number;
 }
@@ -64,6 +66,7 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
   onRotate,
   onDelete,
   onToggleLock,
+  onToggleStatus,
   containerHeight = 600,
 }: VirtualizedFolioListProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -134,8 +137,13 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
     }, 16); // ~60fps
   }, []);
 
-  // Scroll to active folio when it changes
+  // Scroll to active folio only when activeFolioId changes (not on every scroll)
+  const prevActiveFolioIdRef = useRef<string | null>(null);
   useEffect(() => {
+    // Only scroll if activeFolioId actually changed
+    if (activeFolioId === prevActiveFolioIdRef.current) return;
+    prevActiveFolioIdRef.current = activeFolioId;
+
     if (!activeFolioId || !containerRef.current) return;
 
     const activeIndex = folios.findIndex((f) => f.id === activeFolioId);
@@ -143,16 +151,16 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
 
     const itemTop = activeIndex * ITEM_HEIGHT;
     const itemBottom = itemTop + ITEM_HEIGHT;
-    const viewportTop = scrollTop;
-    const viewportBottom = scrollTop + containerHeight;
+    const currentScrollTop = containerRef.current.scrollTop;
+    const viewportBottom = currentScrollTop + containerHeight;
 
-    // Check if item is outside viewport
-    if (itemTop < viewportTop) {
+    // Check if item is outside viewport - only then scroll
+    if (itemTop < currentScrollTop) {
       containerRef.current.scrollTop = itemTop - SCROLL_THRESHOLD;
     } else if (itemBottom > viewportBottom) {
       containerRef.current.scrollTop = itemBottom - containerHeight + SCROLL_THRESHOLD;
     }
-  }, [activeFolioId, folios, scrollTop, containerHeight]);
+  }, [activeFolioId, folios, containerHeight]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -192,12 +200,14 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
                   orientation={folio.orientation}
                   isActive={folio.id === activeFolioId}
                   isLocked={folio.locked}
+                  status={folio.status}
                   thumbnailDataUrl={thumbnail?.dataUrl ?? null}
                   previewText={thumbnail?.previewText ?? ''}
                   onClick={() => onFolioClick(folio.id)}
                   onRotate={() => onRotate(folio.id)}
                   onDelete={() => onDelete(folio.id)}
                   onToggleLock={() => onToggleLock(folio.id, folio.locked)}
+                  onToggleStatus={() => onToggleStatus(folio.id)}
                   canDelete={folios.length > 1}
                   disabled={folio.locked}
                 />
@@ -215,12 +225,14 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
                 orientation={activeFolio.orientation}
                 isActive={true}
                 isLocked={activeFolio.locked}
+                status={activeFolio.status}
                 thumbnailDataUrl={activeThumbnail?.dataUrl ?? null}
                 previewText={activeThumbnail?.previewText ?? ''}
                 onClick={() => {}}
                 onRotate={() => {}}
                 onDelete={() => {}}
                 onToggleLock={() => {}}
+                onToggleStatus={() => {}}
                 canDelete={false}
               />
             </div>
@@ -256,8 +268,14 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
               return (
                 <div
                   key={folio.id}
-                  className="absolute left-0 right-0 px-2"
-                  style={{ top, height: ITEM_HEIGHT }}
+                  className="absolute left-0 right-0 px-1"
+                  style={{
+                    top,
+                    height: ITEM_HEIGHT,
+                    paddingTop: 4,
+                    paddingBottom: 4,
+                    boxSizing: 'border-box'
+                  }}
                 >
                   <SortableFolioThumbnail
                     folioId={folio.id}
@@ -265,12 +283,14 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
                     orientation={folio.orientation}
                     isActive={folio.id === activeFolioId}
                     isLocked={folio.locked}
+                    status={folio.status}
                     thumbnailDataUrl={thumbnail?.dataUrl ?? null}
                     previewText={thumbnail?.previewText ?? ''}
                     onClick={() => onFolioClick(folio.id)}
                     onRotate={() => onRotate(folio.id)}
                     onDelete={() => onDelete(folio.id)}
                     onToggleLock={() => onToggleLock(folio.id, folio.locked)}
+                    onToggleStatus={() => onToggleStatus(folio.id)}
                     canDelete={folios.length > 1}
                     disabled={folio.locked}
                   />
@@ -291,12 +311,14 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
               orientation={activeFolio.orientation}
               isActive={true}
               isLocked={activeFolio.locked}
+              status={activeFolio.status}
               thumbnailDataUrl={activeThumbnail?.dataUrl ?? null}
               previewText={activeThumbnail?.previewText ?? ''}
               onClick={() => {}}
               onRotate={() => {}}
               onDelete={() => {}}
               onToggleLock={() => {}}
+              onToggleStatus={() => {}}
               canDelete={false}
             />
           </div>

@@ -22,6 +22,8 @@ import { MentionNode } from '../nodes/MentionNode';
 import { DynamicFieldNode } from '../nodes/DynamicFieldNode';
 import { InsertionNode } from '../nodes/InsertionNode';
 import { DeletionNode } from '../nodes/DeletionNode';
+import { SpecialTableNode } from '../plugins/SpecialTablePlugin';
+import { FootnoteNode } from '../nodes/FootnoteNode';
 import { A4_CONSTANTS } from '../utils/a4-constants';
 
 /**
@@ -89,7 +91,8 @@ export const EDITOR_NODES: Array<Klass<LexicalNode>> = [
   DynamicFieldNode,
   InsertionNode,
   DeletionNode,
-
+  SpecialTableNode,
+  FootnoteNode,
 ];
 
 /**

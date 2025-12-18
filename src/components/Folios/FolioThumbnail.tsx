@@ -3,9 +3,9 @@
  * Per Constitution Section 4.1
  */
 import { useEffect, useRef, memo } from 'react';
-import { RotateCw, Trash2, Lock, Unlock } from 'lucide-react';
+import { RotateCw, Trash2, Lock, Unlock, CheckCircle, Edit3, RectangleVertical, RectangleHorizontal } from 'lucide-react';
 import { THUMBNAIL_CONSTANTS } from '../../utils/a4-constants';
-import type { FolioOrientation } from '../../types/folio';
+import type { FolioOrientation, FolioStatus } from '../../types/folio';
 
 export interface FolioThumbnailProps {
   /** Folio ID */
@@ -18,6 +18,8 @@ export interface FolioThumbnailProps {
   isActive: boolean;
   /** Whether this folio is locked */
   isLocked: boolean;
+  /** Folio status */
+  status: FolioStatus;
   /** Thumbnail image data URL (from canvas) */
   thumbnailDataUrl: string | null;
   /** Preview text content (fallback when no image) */
@@ -30,6 +32,8 @@ export interface FolioThumbnailProps {
   onDelete: () => void;
   /** Lock toggle handler */
   onToggleLock: () => void;
+  /** Status toggle handler */
+  onToggleStatus: () => void;
   /** Whether delete is allowed */
   canDelete: boolean;
 }
@@ -43,12 +47,14 @@ export const FolioThumbnail = memo(function FolioThumbnail({
   orientation,
   isActive,
   isLocked,
+  status,
   thumbnailDataUrl,
   previewText,
   onClick,
   onRotate,
   onDelete,
   onToggleLock,
+  onToggleStatus,
   canDelete,
 }: FolioThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -152,16 +158,58 @@ export const FolioThumbnail = memo(function FolioThumbnail({
           </div>
         )}
 
+        {/* Status indicator */}
+        <div className={`absolute top-1 left-1 rounded p-0.5 ${
+          status === 'validated'
+            ? 'bg-green-100'
+            : status === 'modified'
+              ? 'bg-orange-100'
+              : 'bg-gray-100'
+        }`}>
+          {status === 'validated' ? (
+            <CheckCircle size={10} className="text-green-600" />
+          ) : (
+            <Edit3 size={10} className={status === 'modified' ? 'text-orange-600' : 'text-gray-400'} />
+          )}
+        </div>
+
         {/* Page number badge */}
         <div className="absolute bottom-1 right-1 bg-gray-900/70 text-white text-[10px] px-1.5 py-0.5 rounded">
           {folioIndex + 1}
         </div>
       </div>
 
-      {/* Orientation indicator */}
-      <div className="mt-1 text-center">
-        <span className="text-[10px] text-gray-400 uppercase tracking-wide">
-          {orientation === 'portrait' ? 'Portrait' : 'Landscape'}
+      {/* Status and Orientation icons - compact design */}
+      <div className="mt-1 flex items-center justify-center gap-1">
+        {/* Status icon */}
+        <span
+          className={`p-0.5 rounded ${
+            status === 'validated'
+              ? 'bg-green-100'
+              : status === 'modified'
+                ? 'bg-orange-100'
+                : 'bg-gray-100'
+          }`}
+          title={status === 'validated' ? 'Validé' : status === 'modified' ? 'Modifié' : 'Brouillon'}
+        >
+          {status === 'validated' ? (
+            <CheckCircle size={10} className="text-green-600" />
+          ) : status === 'modified' ? (
+            <Edit3 size={10} className="text-orange-600" />
+          ) : (
+            <Edit3 size={10} className="text-gray-400" />
+          )}
+        </span>
+        {/* Orientation icon */}
+        <span
+          className="p-0.5 rounded bg-gray-100"
+          title={orientation === 'portrait' ? 'Portrait' : 'Paysage'}
+        >
+          {orientation === 'portrait' ? (
+            <RectangleVertical size={10} className="text-gray-500" />
+          ) : (
+            <RectangleHorizontal size={10} className="text-gray-500" />
+          )}
         </span>
       </div>
 
@@ -173,6 +221,26 @@ export const FolioThumbnail = memo(function FolioThumbnail({
         `}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Status toggle button */}
+        <button
+          type="button"
+          onClick={onToggleStatus}
+          className={`p-1 rounded shadow-sm transition-colors ${
+            status === 'validated'
+              ? 'bg-green-100 hover:bg-green-200'
+              : status === 'modified'
+                ? 'bg-orange-100 hover:bg-orange-200'
+                : 'bg-white hover:bg-gray-100'
+          }`}
+          title={status === 'validated' ? 'Marquer comme modifié' : 'Valider la page'}
+        >
+          {status === 'validated' ? (
+            <CheckCircle size={12} className="text-green-600" />
+          ) : (
+            <Edit3 size={12} className={status === 'modified' ? 'text-orange-600' : 'text-gray-600'} />
+          )}
+        </button>
+
         <button
           type="button"
           onClick={onRotate}

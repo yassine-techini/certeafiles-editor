@@ -14,11 +14,15 @@ export type SlashMenuActionType =
   | 'insert_heading'
   | 'insert_list'
   | 'insert_table'
+  | 'insert_special_table'
   | 'insert_image'
   | 'insert_divider'
   | 'insert_quote'
   | 'insert_code'
   | 'insert_comment'
+  | 'insert_footnote'
+  | 'insert_symbol'
+  | 'open_query_builder'
   | 'format_text'
   | 'insert_page_break'
   | 'custom';
@@ -36,6 +40,11 @@ export interface SlashMenuItem extends TypeaheadItem {
 }
 
 /**
+ * Special table type for payload
+ */
+export type SpecialTablePayloadType = 'products_by_group' | 'history' | 'validation';
+
+/**
  * Payload types for different actions
  */
 export type SlashMenuPayload =
@@ -43,6 +52,7 @@ export type SlashMenuPayload =
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { type: 'list'; listType: 'bullet' | 'number' | 'check' }
   | { type: 'table'; rows?: number; cols?: number }
+  | { type: 'special_table'; tableType: SpecialTablePayloadType }
   | { type: 'comment'; commentType?: CommentType }
   | { type: 'format'; format: string }
   | { type: 'custom'; handler: string };
@@ -53,6 +63,7 @@ export type SlashMenuPayload =
 export const SLASH_MENU_CATEGORIES = {
   MODELE: 'Modèle',
   DOCUMENT: 'Document',
+  TABLEAUX_METIER: 'Tableaux Métier',
   FORMAT: 'Format',
   INSERT: 'Insert',
 } as const;
@@ -121,6 +132,15 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
     icon: 'MessageSquareDashed',
     actionType: 'insert_slot',
     payload: { type: 'slot', slotType: 'commentaire' },
+  },
+  {
+    id: 'query_builder',
+    label: 'Editeur de Requetes',
+    description: 'Ouvrir l\'editeur graphique de requetes SQL',
+    category: SLASH_MENU_CATEGORIES.MODELE,
+    keywords: ['query', 'requete', 'sql', 'database', 'base', 'donnees', 'fetcher'],
+    icon: 'Database',
+    actionType: 'open_query_builder',
   },
 
   // === Document Category ===
@@ -200,6 +220,38 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
     actionType: 'insert_table',
     payload: { type: 'table', rows: 3, cols: 3 },
   },
+
+  // === Tableaux Métier Category ===
+  {
+    id: 'products_table',
+    label: 'Produits par Groupe',
+    description: 'Tableau des produits concernés par groupe',
+    category: SLASH_MENU_CATEGORIES.TABLEAUX_METIER,
+    keywords: ['produits', 'groupe', 'products', 'group', 'concernés'],
+    icon: 'Package',
+    actionType: 'insert_special_table',
+    payload: { type: 'special_table', tableType: 'products_by_group' },
+  },
+  {
+    id: 'history_table',
+    label: 'Historique',
+    description: 'Tableau d\'historique des versions',
+    category: SLASH_MENU_CATEGORIES.TABLEAUX_METIER,
+    keywords: ['historique', 'history', 'versions', 'changelog'],
+    icon: 'History',
+    actionType: 'insert_special_table',
+    payload: { type: 'special_table', tableType: 'history' },
+  },
+  {
+    id: 'validation_table',
+    label: 'Validation',
+    description: 'Tableau de validation et signatures',
+    category: SLASH_MENU_CATEGORIES.TABLEAUX_METIER,
+    keywords: ['validation', 'signature', 'approbation', 'approval'],
+    icon: 'CheckCircle',
+    actionType: 'insert_special_table',
+    payload: { type: 'special_table', tableType: 'validation' },
+  },
   {
     id: 'image',
     label: 'Image',
@@ -247,6 +299,24 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
     keywords: ['page', 'break', 'saut'],
     icon: 'FileBreak',
     actionType: 'insert_page_break',
+  },
+  {
+    id: 'footnote',
+    label: 'Note de bas de page',
+    description: 'Ajouter une note de bas de page',
+    category: SLASH_MENU_CATEGORIES.DOCUMENT,
+    keywords: ['note', 'footnote', 'bas', 'page', 'reference'],
+    icon: 'FileText',
+    actionType: 'insert_footnote',
+  },
+  {
+    id: 'symbol',
+    label: 'Symbole spécial',
+    description: 'Insérer un caractère spécial (©, ™, €, etc.)',
+    category: SLASH_MENU_CATEGORIES.DOCUMENT,
+    keywords: ['symbol', 'special', 'character', 'caractere', 'omega', 'copyright', 'trademark'],
+    icon: 'Type',
+    actionType: 'insert_symbol',
   },
 
   // === Insert Category ===

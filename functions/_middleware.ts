@@ -1,10 +1,26 @@
 /**
  * Middleware for Pages Functions
- * Handles CORS and common headers
+ * Handles CORS and common headers for API routes only
  */
 
 export const onRequest: PagesFunction = async (context) => {
-  // Handle CORS preflight
+  const url = new URL(context.request.url);
+
+  // Skip middleware for static assets and root page
+  if (
+    url.pathname.startsWith('/assets/') ||
+    url.pathname === '/' ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.svg') ||
+    url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.ico')
+  ) {
+    return context.next();
+  }
+
+  // Handle CORS preflight for API routes
   if (context.request.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -19,7 +35,7 @@ export const onRequest: PagesFunction = async (context) => {
   // Continue with the request
   const response = await context.next();
 
-  // Add CORS headers to response
+  // Add CORS headers to API responses
   const newHeaders = new Headers(response.headers);
   newHeaders.set('Access-Control-Allow-Origin', '*');
 

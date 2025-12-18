@@ -34,8 +34,13 @@ import { INSERT_IMAGE_COMMAND } from '../nodes/ImageNode';
 import { OPEN_TABLE_DIALOG_COMMAND } from './TablePlugin';
 import { INSERT_SLOT_COMMAND } from './SlotPlugin';
 import { CREATE_COMMENT_COMMAND } from './CommentPlugin';
+import { INSERT_SPECIAL_TABLE_COMMAND } from './SpecialTablePlugin';
+import { INSERT_FOOTNOTE_COMMAND } from './FootnotePlugin';
+import { OPEN_SYMBOL_PICKER_COMMAND } from './SymbolPickerPlugin';
+import { OPEN_QUERY_BUILDER_COMMAND } from './QueryBuilderPlugin';
 import type { SlotType } from '../types/slot';
 import type { CommentType } from '../types/comment';
+import type { SpecialTablePayloadType } from '../types/slashMenu';
 
 export interface SlashMenuPluginProps {
   /** Custom menu items (overrides default) */
@@ -149,6 +154,16 @@ export function SlashMenuPlugin({
             break;
           }
 
+          case 'insert_special_table': {
+            const payload = item.payload;
+            if (payload?.type === 'special_table') {
+              editor.dispatchCommand(INSERT_SPECIAL_TABLE_COMMAND, {
+                tableType: payload.tableType as SpecialTablePayloadType,
+              });
+            }
+            break;
+          }
+
           case 'insert_image': {
             // Trigger file picker
             const input = document.createElement('input');
@@ -208,6 +223,24 @@ export function SlashMenuPlugin({
           case 'insert_page_break': {
             // Insert a horizontal rule as page break indicator
             editor.dispatchCommand(INSERT_HORIZONTAL_RULE_COMMAND, undefined);
+            break;
+          }
+
+          case 'insert_footnote': {
+            // Insert a footnote
+            editor.dispatchCommand(INSERT_FOOTNOTE_COMMAND, {});
+            break;
+          }
+
+          case 'insert_symbol': {
+            // Open the symbol picker
+            editor.dispatchCommand(OPEN_SYMBOL_PICKER_COMMAND, undefined);
+            break;
+          }
+
+          case 'open_query_builder': {
+            // Open the query builder
+            editor.dispatchCommand(OPEN_QUERY_BUILDER_COMMAND, {});
             break;
           }
         }

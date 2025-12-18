@@ -179,22 +179,22 @@ export class HeaderNode extends ElementNode {
       header.className += ` ${theme.header}`;
     }
 
-    // Set dimensions and positioning
+    // Set dimensions and positioning - table-based structured header
     const heightPx = this.__height * A4_CONSTANTS.MM_TO_PX;
     header.style.height = `${heightPx}px`;
     header.style.minHeight = `${heightPx}px`;
-    header.style.position = 'relative';
+    header.style.flexShrink = '0'; // Don't shrink
     header.style.width = '100%';
-    header.style.display = 'flex';
-    header.style.alignItems = 'center';
-    header.style.justifyContent = 'space-between';
-    header.style.padding = '0 8px';
     header.style.boxSizing = 'border-box';
-    header.style.fontSize = '10px';
-    header.style.color = '#6b7280';
-    header.style.borderBottom = '1px solid #e5e7eb';
-    header.style.backgroundColor = '#fafafa';
-    header.style.marginBottom = '8px';
+    header.style.fontSize = '11px';
+    header.style.color = '#374151';
+    header.style.border = '1px solid #d1d5db';
+    header.style.backgroundColor = '#ffffff';
+    header.style.marginTop = `${A4_CONSTANTS.MARGIN_TOP * A4_CONSTANTS.MM_TO_PX * 0.3}px`;
+    header.style.marginBottom = '12px';
+    header.style.display = 'table';
+    header.style.tableLayout = 'fixed';
+    header.style.borderCollapse = 'collapse';
 
     return header;
   }

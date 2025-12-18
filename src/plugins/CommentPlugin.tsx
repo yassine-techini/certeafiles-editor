@@ -302,6 +302,82 @@ export function CommentPlugin({
     return removeListener;
   }, [editor]);
 
+  // Listen for new threads created via panel and wrap selected text with CommentNode
+  useEffect(() => {
+    const unsubscribe = useCommentStore.subscribe(
+      (state) => state.threads,
+      (threads, prevThreads) => {
+        // Find newly added thread
+        for (const [id, thread] of threads) {
+          if (!prevThreads.has(id) && thread.quotedText) {
+            // New thread was added - wrap the quoted text with CommentNode
+            editor.update(() => {
+              const selection = $getSelection();
+              if (!$isRangeSelection(selection)) return;
+
+              const selectedText = selection.getTextContent();
+              // Only proceed if current selection matches the quoted text
+              if (selectedText === thread.quotedText) {
+                const nodes = selection.getNodes();
+                let firstNodeKey: string | null = null;
+
+                nodes.forEach((node) => {
+                  if ($isTextNode(node)) {
+                    const textNode = node as TextNode;
+                    const textContent = textNode.getTextContent();
+                    const anchor = selection.anchor;
+                    const focus = selection.focus;
+                    const anchorNode = anchor.getNode();
+                    const focusNode = focus.getNode();
+
+                    let startOffset = 0;
+                    let endOffset = textContent.length;
+
+                    if (node.is(anchorNode)) startOffset = anchor.offset;
+                    if (node.is(focusNode)) endOffset = focus.offset;
+                    if (startOffset > endOffset) [startOffset, endOffset] = [endOffset, startOffset];
+
+                    const selectedTextPart = textContent.slice(startOffset, endOffset);
+                    if (selectedTextPart.length > 0) {
+                      const commentNode = $createCommentNode(selectedTextPart, id, thread.type);
+
+                      if (startOffset > 0 || endOffset < textContent.length) {
+                        if (startOffset > 0) {
+                          const parts = textNode.splitText(startOffset);
+                          if (parts[1]) {
+                            const remaining = parts[1].splitText(endOffset - startOffset);
+                            if (remaining[0]) {
+                              remaining[0].replace(commentNode);
+                            }
+                          }
+                        } else {
+                          const parts = textNode.splitText(endOffset);
+                          if (parts[0]) {
+                            parts[0].replace(commentNode);
+                          }
+                        }
+                      } else {
+                        textNode.replace(commentNode);
+                      }
+
+                      if (!firstNodeKey) firstNodeKey = commentNode.getKey();
+                    }
+                  }
+                });
+
+                if (firstNodeKey) {
+                  setThreadNodeKey(id, firstNodeKey);
+                }
+              }
+            });
+          }
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, [editor, setThreadNodeKey]);
+
   return null;
 }
 

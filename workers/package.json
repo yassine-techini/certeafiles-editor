@@ -1,0 +1,18 @@
+{
+  "name": "certeafiles-yjs-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^3.99.0"
+  },
+  "dependencies": {
+    "yjs": "^13.6.27",
+    "lib0": "^0.2.115",
+    "y-protocols": "^1.0.7"
+  }
+}

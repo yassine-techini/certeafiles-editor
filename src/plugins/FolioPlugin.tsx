@@ -8,11 +8,13 @@ import {
   $getRoot,
   $getSelection,
   $isRangeSelection,
+  $createParagraphNode,
   COMMAND_PRIORITY_EDITOR,
 } from 'lexical';
 import { mergeRegister } from '@lexical/utils';
 import {
   FolioNode,
+  $createFolioNode,
   $createFolioNodeWithContent,
   $isFolioNode,
   $getAllFolioNodes,
@@ -21,6 +23,7 @@ import {
   DELETE_FOLIO_COMMAND,
   UPDATE_FOLIO_COMMAND,
 } from '../nodes/FolioNode';
+import { $generateNodesFromSerializedNodes } from '@lexical/clipboard';
 import { useFolioStore } from '../stores/folioStore';
 
 export interface FolioPluginProps {
@@ -70,12 +73,33 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
       root.clear();
 
       storeFolios.forEach((folio) => {
-        const folioNode = $createFolioNodeWithContent({
+        // Create the folio node
+        const folioNode = $createFolioNode({
           folioId: folio.id,
           folioIndex: folio.index,
           orientation: folio.orientation,
           sectionId: folio.sectionId,
         });
+
+        // If folio has content, parse and add it
+        if (folio.content && folio.content.root && folio.content.root.children) {
+          try {
+            // Generate nodes from serialized content
+            const nodes = $generateNodesFromSerializedNodes(folio.content.root.children);
+            nodes.forEach((node) => {
+              folioNode.append(node);
+            });
+            console.log('[FolioPlugin] Loaded content for folio', folio.id, 'with', nodes.length, 'nodes');
+          } catch (error) {
+            console.error('[FolioPlugin] Error loading content for folio', folio.id, error);
+            // Fallback: add empty paragraph
+            folioNode.append($createParagraphNode());
+          }
+        } else {
+          // No content - add empty paragraph
+          folioNode.append($createParagraphNode());
+        }
+
         root.append(folioNode);
       });
 
@@ -305,9 +329,14 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
   useEffect(() => {
     if (!autoSync) return;
 
+    // Subscribe to the folios Map directly - this gives us proper change detection
     const unsubscribe = useFolioStore.subscribe(
-      (state) => state.getFoliosInOrder(),
-      (newFolios, prevFolios) => {
+      (state) => state.folios,
+      (newFoliosMap, prevFoliosMap) => {
+        // Convert to arrays for comparison
+        const newFolios = Array.from(newFoliosMap.values()).sort((a, b) => a.index - b.index);
+        const prevFolios = Array.from(prevFoliosMap.values()).sort((a, b) => a.index - b.index);
+
         // Only sync if folios actually changed
         if (
           newFolios.length !== prevFolios.length ||

@@ -1,509 +1,534 @@
 /**
- * CollaborationPlugin - Real-time collaboration using Yjs
+ * CollaborationPlugin - Real-time collaboration using Yjs and Cloudflare Durable Objects
  * Per Constitution Section 7 - Collaboration
+ *
+ * Full Lexical-Yjs synchronization with custom WebSocket provider
  */
-import { useEffect, useCallback, useRef, useState } from 'react';
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { useCallback, useMemo } from 'react';
+import { CollaborationPlugin as LexicalCollaborationPlugin } from '@lexical/react/LexicalCollaborationPlugin';
+import type { Provider } from '@lexical/yjs';
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import type {
-  CollaborationConfig,
-  CollaborationState,
-  ConnectionStatus,
-  CollaborationUser,
-} from '../types/collaboration';
-import { DEFAULT_COLLABORATION_CONFIG } from '../types/collaboration';
+import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import * as syncProtocol from 'y-protocols/sync';
-import * as awarenessProtocol from 'y-protocols/awareness';
+import type {
+  CollaborationUser,
+  ConnectionStatus,
+  CollaborationState,
+} from '../types/collaboration';
+import { getColorForUser } from '../types/collaboration';
 
-/**
- * Message types for Yjs protocol
- */
 const MessageType = {
   SYNC: 0,
   AWARENESS: 1,
-  AUTH: 2,
   QUERY_AWARENESS: 3,
 } as const;
 
+type EventCallback = (...args: unknown[]) => void;
+
 /**
- * WebSocket provider for Yjs
+ * Custom WebSocket Provider for Yjs that connects to Cloudflare Durable Objects
+ * Implements the Provider interface required by @lexical/yjs
  */
 class WebSocketProvider {
   private ws: WebSocket | null = null;
-  private doc: Y.Doc;
-  private awareness: awarenessProtocol.Awareness;
-  private roomId: string;
+  private _doc: Y.Doc;
+  awareness: awarenessProtocol.Awareness;
   private serverUrl: string;
+  private roomId: string;
   private user: CollaborationUser;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts: number;
-  private reconnectDelay: number;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private synced = false;
-  private _onStatusChange: ((status: ConnectionStatus) => void) | null = null;
-  private _onSyncChange: ((synced: boolean) => void) | null = null;
-  private _onUsersChange: ((users: CollaborationUser[]) => void) | null = null;
+  private _connected = false;
+  private destroyed = false;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connecting = false;
+  private indexeddb: IndexeddbPersistence | null = null;
 
-  constructor(
-    doc: Y.Doc,
-    awareness: awarenessProtocol.Awareness,
-    roomId: string,
-    serverUrl: string,
-    user: CollaborationUser,
-    options: { reconnectDelay?: number | undefined; maxReconnectAttempts?: number | undefined } = {}
-  ) {
-    this.doc = doc;
-    this.awareness = awareness;
+  // Event emitter pattern for Provider interface
+  private eventListeners: Map<string, Set<EventCallback>> = new Map();
+
+  private statusCallbacks = new Set<(status: ConnectionStatus) => void>();
+  private syncCallbacks = new Set<(synced: boolean) => void>();
+  private usersCallbacks = new Set<(users: CollaborationUser[]) => void>();
+
+  constructor(roomId: string, serverUrl: string, user: CollaborationUser, doc: Y.Doc) {
     this.roomId = roomId;
     this.serverUrl = serverUrl;
     this.user = user;
-    this.reconnectDelay = options.reconnectDelay ?? 1000;
-    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10;
+    this._doc = doc;
+    this.awareness = new awarenessProtocol.Awareness(doc);
 
-    // Set up awareness for current user
+    // Set local user state for awareness
     this.awareness.setLocalStateField('user', {
       id: user.id,
       name: user.name,
       color: user.color,
     });
 
-    // Listen for document updates
-    this.doc.on('update', this.handleDocUpdate);
+    // Set up IndexedDB persistence
+    this.indexeddb = new IndexeddbPersistence(`certeafiles-${roomId}`, doc);
+    this.indexeddb.on('synced', () => {
+      console.log('[WebSocketProvider] IndexedDB synced');
+    });
 
-    // Listen for awareness updates
-    this.awareness.on('update', this.handleAwarenessUpdate);
+    // Listen for awareness changes
+    this.awareness.on('update', () => {
+      this.notifyUsers();
+    });
+
+    console.log('[WebSocketProvider] Created for room:', roomId);
   }
 
-  /**
-   * Set status change callback
-   */
-  onStatusChange(callback: (status: ConnectionStatus) => void): void {
-    this._onStatusChange = callback;
+  // Provider interface: on method
+  on(event: string, callback: EventCallback): void {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Set());
+    }
+    this.eventListeners.get(event)!.add(callback);
   }
 
-  /**
-   * Set sync change callback
-   */
-  onSyncChange(callback: (synced: boolean) => void): void {
-    this._onSyncChange = callback;
-  }
-
-  /**
-   * Set users change callback
-   */
-  onUsersChange(callback: (users: CollaborationUser[]) => void): void {
-    this._onUsersChange = callback;
-  }
-
-  /**
-   * Connect to WebSocket server
-   */
-  connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
-
-    this._onStatusChange?.('connecting');
-
-    try {
-      // Build WebSocket URL
-      const url = new URL(this.serverUrl);
-      url.searchParams.set('room', this.roomId);
-      url.searchParams.set('userId', this.user.id);
-      url.searchParams.set('userName', this.user.name);
-      url.searchParams.set('userColor', this.user.color);
-
-      this.ws = new WebSocket(url.toString());
-      this.ws.binaryType = 'arraybuffer';
-
-      this.ws.onopen = () => {
-        console.log('[CollaborationPlugin] WebSocket connected');
-        this.reconnectAttempts = 0;
-        this._onStatusChange?.('connected');
-
-        // Send initial sync request
-        this.sendSyncStep1();
-
-        // Query for awareness states
-        this.sendQueryAwareness();
-      };
-
-      this.ws.onmessage = (event) => {
-        this.handleMessage(new Uint8Array(event.data));
-      };
-
-      this.ws.onclose = (event) => {
-        console.log('[CollaborationPlugin] WebSocket closed:', event.code, event.reason);
-        this.ws = null;
-        this.synced = false;
-        this._onSyncChange?.(false);
-
-        if (event.code !== 1000) {
-          this.attemptReconnect();
-        } else {
-          this._onStatusChange?.('disconnected');
-        }
-      };
-
-      this.ws.onerror = (event) => {
-        console.error('[CollaborationPlugin] WebSocket error:', event);
-        this._onStatusChange?.('error');
-      };
-    } catch (error) {
-      console.error('[CollaborationPlugin] Failed to connect:', error);
-      this._onStatusChange?.('error');
-      this.attemptReconnect();
+  // Provider interface: off method
+  off(event: string, callback: EventCallback): void {
+    const listeners = this.eventListeners.get(event);
+    if (listeners) {
+      listeners.delete(callback);
     }
   }
 
-  /**
-   * Disconnect from WebSocket server
-   */
+  private emit(event: string, ...args: unknown[]): void {
+    const listeners = this.eventListeners.get(event);
+    if (listeners) {
+      listeners.forEach((callback) => callback(...args));
+    }
+  }
+
+  onStatus(callback: (status: ConnectionStatus) => void): () => void {
+    this.statusCallbacks.add(callback);
+    callback(this._connected ? 'connected' : 'disconnected');
+    return () => this.statusCallbacks.delete(callback);
+  }
+
+  onSync(callback: (synced: boolean) => void): () => void {
+    this.syncCallbacks.add(callback);
+    callback(this.synced);
+    return () => this.syncCallbacks.delete(callback);
+  }
+
+  onUsers(callback: (users: CollaborationUser[]) => void): () => void {
+    this.usersCallbacks.add(callback);
+    callback(this.getUsers());
+    return () => this.usersCallbacks.delete(callback);
+  }
+
+  private notifyStatus(status: ConnectionStatus): void {
+    this.statusCallbacks.forEach((cb) => cb(status));
+    this.emit('status', [{ status }]);
+  }
+
+  private notifySync(synced: boolean): void {
+    this.synced = synced;
+    this.syncCallbacks.forEach((cb) => cb(synced));
+    if (synced) {
+      this.emit('sync', true);
+    }
+  }
+
+  private notifyUsers(): void {
+    const users = this.getUsers();
+    this.usersCallbacks.forEach((cb) => cb(users));
+  }
+
+  connect(): void {
+    if (this.destroyed || this.connecting || this._connected) {
+      return;
+    }
+
+    this.connecting = true;
+    this.notifyStatus('connecting');
+
+    const url = new URL(this.serverUrl);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('room', this.roomId);
+    url.searchParams.set('userId', this.user.id);
+    url.searchParams.set('userName', this.user.name);
+    url.searchParams.set('userColor', this.user.color);
+
+    console.log('[WebSocketProvider] Connecting to:', url.toString());
+
+    try {
+      const ws = new WebSocket(url.toString());
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        if (this.destroyed) {
+          ws.close();
+          return;
+        }
+
+        console.log('[WebSocketProvider] Connected');
+        this.ws = ws;
+        this.connecting = false;
+        this._connected = true;
+        this.reconnectAttempts = 0;
+        this.notifyStatus('connected');
+
+        // Send sync step 1
+        this.sendSyncStep1();
+
+        // Send awareness
+        this.sendAwareness();
+
+        // Set up doc update listener
+        this._doc.on('update', this.handleDocUpdate);
+        this.awareness.on('update', this.handleAwarenessUpdate);
+      };
+
+      ws.onmessage = (event) => {
+        if (this.ws !== ws) return;
+        this.handleMessage(new Uint8Array(event.data));
+      };
+
+      ws.onclose = (event) => {
+        console.log('[WebSocketProvider] Disconnected:', event.code);
+
+        if (this.ws === ws) {
+          this.ws = null;
+          this._connected = false;
+          this.connecting = false;
+
+          if (this.synced) {
+            this.notifySync(false);
+          }
+
+          if (!this.destroyed && event.code !== 1000) {
+            this.scheduleReconnect();
+          } else {
+            this.notifyStatus('disconnected');
+          }
+        }
+      };
+
+      ws.onerror = () => {
+        console.log('[WebSocketProvider] WebSocket error');
+        this.connecting = false;
+      };
+    } catch (error) {
+      console.error('[WebSocketProvider] Connection error:', error);
+      this.connecting = false;
+      this.notifyStatus('error');
+      this.scheduleReconnect();
+    }
+  }
+
+  private sendSyncStep1(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    try {
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MessageType.SYNC);
+      syncProtocol.writeSyncStep1(encoder, this._doc);
+      this.ws.send(encoding.toUint8Array(encoder));
+    } catch (e) {
+      console.error('[WebSocketProvider] Error sending sync step 1:', e);
+    }
+  }
+
+  private sendAwareness(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    try {
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MessageType.AWARENESS);
+      encoding.writeVarUint8Array(
+        encoder,
+        awarenessProtocol.encodeAwarenessUpdate(this.awareness, [
+          this._doc.clientID,
+        ])
+      );
+      this.ws.send(encoding.toUint8Array(encoder));
+    } catch (e) {
+      console.error('[WebSocketProvider] Error sending awareness:', e);
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.destroyed || this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log('[WebSocketProvider] Max reconnect attempts reached');
+      this.notifyStatus('error');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+    console.log(
+      `[WebSocketProvider] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`
+    );
+
+    this.notifyStatus('reconnecting');
+
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      if (!this.destroyed) {
+        this.connect();
+      }
+    }, delay);
+  }
+
+  private handleMessage = (data: Uint8Array): void => {
+    try {
+      const decoder = decoding.createDecoder(data);
+      const messageType = decoding.readVarUint(decoder);
+
+      if (messageType === MessageType.SYNC) {
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, MessageType.SYNC);
+
+        const syncMessageType = syncProtocol.readSyncMessage(
+          decoder,
+          encoder,
+          this._doc,
+          this
+        );
+
+        if (
+          encoding.length(encoder) > 1 &&
+          this.ws?.readyState === WebSocket.OPEN
+        ) {
+          this.ws.send(encoding.toUint8Array(encoder));
+        }
+
+        // Sync step 2 = synced
+        if (syncMessageType === 1 && !this.synced) {
+          console.log('[WebSocketProvider] Synced with server');
+          this.notifySync(true);
+        }
+      } else if (messageType === MessageType.AWARENESS) {
+        const update = decoding.readVarUint8Array(decoder);
+        awarenessProtocol.applyAwarenessUpdate(this.awareness, update, this);
+      }
+    } catch (e) {
+      console.error('[WebSocketProvider] Error handling message:', e);
+    }
+  };
+
+  private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
+    if (
+      origin === this ||
+      this.destroyed ||
+      !this.ws ||
+      this.ws.readyState !== WebSocket.OPEN
+    )
+      return;
+
+    try {
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MessageType.SYNC);
+      syncProtocol.writeUpdate(encoder, update);
+      this.ws.send(encoding.toUint8Array(encoder));
+    } catch (e) {
+      console.error('[WebSocketProvider] Error sending doc update:', e);
+    }
+  };
+
+  private handleAwarenessUpdate = (
+    {
+      added,
+      updated,
+      removed,
+    }: { added: number[]; updated: number[]; removed: number[] },
+    origin: unknown
+  ): void => {
+    if (
+      origin === this ||
+      this.destroyed ||
+      !this.ws ||
+      this.ws.readyState !== WebSocket.OPEN
+    )
+      return;
+
+    const changed = added.concat(updated, removed);
+    if (changed.length === 0) return;
+
+    try {
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MessageType.AWARENESS);
+      encoding.writeVarUint8Array(
+        encoder,
+        awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed)
+      );
+      this.ws.send(encoding.toUint8Array(encoder));
+    } catch (e) {
+      console.error('[WebSocketProvider] Error sending awareness update:', e);
+    }
+  };
+
   disconnect(): void {
+    console.log('[WebSocketProvider] Disconnecting');
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
 
-    if (this.ws) {
-      this.ws.close(1000, 'User disconnected');
-      this.ws = null;
-    }
-
-    this._onStatusChange?.('disconnected');
-  }
-
-  /**
-   * Destroy provider
-   */
-  destroy(): void {
-    this.disconnect();
-    this.doc.off('update', this.handleDocUpdate);
+    this._doc.off('update', this.handleDocUpdate);
     this.awareness.off('update', this.handleAwarenessUpdate);
-    this.awareness.destroy();
-  }
 
-  /**
-   * Attempt to reconnect
-   */
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('[CollaborationPlugin] Max reconnect attempts reached');
-      this._onStatusChange?.('error');
-      return;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close(1000);
     }
-
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-
-    console.log(`[CollaborationPlugin] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    this._onStatusChange?.('reconnecting');
-
-    this.reconnectTimer = setTimeout(() => {
-      this.connect();
-    }, delay);
+    this.ws = null;
+    this._connected = false;
+    this.connecting = false;
   }
 
-  /**
-   * Handle incoming WebSocket message
-   */
-  private handleMessage = (data: Uint8Array): void => {
-    const decoder = decoding.createDecoder(data);
-    const messageType = decoding.readVarUint(decoder);
-
-    switch (messageType) {
-      case MessageType.SYNC:
-        this.handleSyncMessage(decoder);
-        break;
-      case MessageType.AWARENESS:
-        this.handleAwarenessMessage(decoder);
-        break;
-    }
-  };
-
-  /**
-   * Handle sync protocol message
-   */
-  private handleSyncMessage(decoder: decoding.Decoder): void {
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, MessageType.SYNC);
-
-    const syncMessageType = syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
-
-    // If there's a response to send
-    if (encoding.length(encoder) > 1) {
-      this.send(encoding.toUint8Array(encoder));
-    }
-
-    // Mark as synced after receiving sync step 2
-    if (syncMessageType === 1 && !this.synced) {
-      this.synced = true;
-      this._onSyncChange?.(true);
-    }
-  }
-
-  /**
-   * Handle awareness protocol message
-   */
-  private handleAwarenessMessage(decoder: decoding.Decoder): void {
-    const update = decoding.readVarUint8Array(decoder);
-    awarenessProtocol.applyAwarenessUpdate(this.awareness, update, this);
-
-    // Update users list
-    this.updateUsers();
-  }
-
-  /**
-   * Handle local document update
-   */
-  private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
-    if (origin === this) return;
-
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, MessageType.SYNC);
-    syncProtocol.writeUpdate(encoder, update);
-    this.send(encoding.toUint8Array(encoder));
-  };
-
-  /**
-   * Handle local awareness update
-   */
-  private handleAwarenessUpdate = (
-    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
-    origin: unknown
-  ): void => {
-    if (origin === this) return;
-
-    const changedClients = added.concat(updated, removed);
-    if (changedClients.length === 0) return;
-
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, MessageType.AWARENESS);
-    encoding.writeVarUint8Array(
-      encoder,
-      awarenessProtocol.encodeAwarenessUpdate(this.awareness, changedClients)
-    );
-    this.send(encoding.toUint8Array(encoder));
-  };
-
-  /**
-   * Send sync step 1
-   */
-  private sendSyncStep1(): void {
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, MessageType.SYNC);
-    syncProtocol.writeSyncStep1(encoder, this.doc);
-    this.send(encoding.toUint8Array(encoder));
-  }
-
-  /**
-   * Send query awareness message
-   */
-  private sendQueryAwareness(): void {
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, MessageType.QUERY_AWARENESS);
-    this.send(encoding.toUint8Array(encoder));
-  }
-
-  /**
-   * Send message to WebSocket
-   */
-  private send(message: Uint8Array): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(message);
-    }
-  }
-
-  /**
-   * Update connected users list
-   */
-  private updateUsers(): void {
+  getUsers(): CollaborationUser[] {
     const users: CollaborationUser[] = [];
-    const states = this.awareness.getStates();
-    states.forEach((state) => {
-      const stateObj = state as { user?: CollaborationUser };
-      if (stateObj.user) {
-        users.push(stateObj.user);
-      }
+    this.awareness.getStates().forEach((state) => {
+      const s = state as { user?: CollaborationUser };
+      if (s.user) users.push(s.user);
     });
-    this._onUsersChange?.(users);
+    return users;
+  }
+
+  isConnected(): boolean {
+    return this._connected;
+  }
+
+  isSynced(): boolean {
+    return this.synced;
+  }
+
+  destroy(): void {
+    console.log('[WebSocketProvider] Destroying');
+    this.destroyed = true;
+    this.disconnect();
+    this.indexeddb?.destroy();
+    this.awareness.destroy();
+    this.statusCallbacks.clear();
+    this.syncCallbacks.clear();
+    this.usersCallbacks.clear();
+    this.eventListeners.clear();
   }
 }
 
-/**
- * Props for CollaborationPlugin
- */
 export interface CollaborationPluginProps {
-  /** Collaboration configuration */
-  config: CollaborationConfig;
-  /** Callback when connection status changes */
+  roomId: string;
+  serverUrl?: string | undefined;
+  user?: { id?: string; name?: string; color?: string } | undefined;
   onStatusChange?: ((status: ConnectionStatus) => void) | undefined;
-  /** Callback when sync status changes */
   onSyncChange?: ((synced: boolean) => void) | undefined;
-  /** Callback when connected users change */
   onUsersChange?: ((users: CollaborationUser[]) => void) | undefined;
-  /** Callback when collaboration state changes */
   onStateChange?: ((state: CollaborationState) => void) | undefined;
-  /** Whether collaboration is enabled */
   enabled?: boolean | undefined;
 }
 
-/**
- * CollaborationPlugin - Enables real-time collaboration
- */
+function getUserId(): string {
+  const stored = localStorage.getItem('certeafiles-user-id');
+  if (stored) return stored;
+  const newId = crypto.randomUUID();
+  localStorage.setItem('certeafiles-user-id', newId);
+  return newId;
+}
+
+function getUserName(): string {
+  return localStorage.getItem('certeafiles-user-name') || 'Utilisateur';
+}
+
+// Cursor colors for collaboration
+const CURSOR_COLORS = [
+  '#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
+  '#2196f3', '#03a9f4', '#00bcd4', '#009688',
+  '#4caf50', '#8bc34a', '#ff9800', '#ff5722',
+];
+
 export function CollaborationPlugin({
-  config,
+  roomId,
+  serverUrl = 'https://certeafiles-yjs-server.yassine-techini.workers.dev',
+  user,
   onStatusChange,
   onSyncChange,
   onUsersChange,
   onStateChange,
   enabled = true,
-}: CollaborationPluginProps): null {
-  const [editor] = useLexicalComposerContext();
-  const providerRef = useRef<WebSocketProvider | null>(null);
-  const docRef = useRef<Y.Doc | null>(null);
-  const awarenessRef = useRef<awarenessProtocol.Awareness | null>(null);
-  const indexeddbRef = useRef<IndexeddbPersistence | null>(null);
+}: CollaborationPluginProps): JSX.Element | null {
+  const userId = user?.id || getUserId();
+  const userName = user?.name || getUserName();
+  const userColor = user?.color || getColorForUser(userId);
 
-  // Merge config with defaults
-  const fullConfig = { ...DEFAULT_COLLABORATION_CONFIG, ...config };
+  // Cursor color based on user ID
+  const cursorColor = useMemo(() => {
+    const index = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return CURSOR_COLORS[index % CURSOR_COLORS.length];
+  }, [userId]);
 
-  // Track state
-  const [, setState] = useState<CollaborationState>({
-    status: 'disconnected',
-    isSynced: false,
-    isOffline: !navigator.onLine,
-    users: [],
-  });
-
-  // Update state and notify
-  const updateState = useCallback((updates: Partial<CollaborationState>) => {
-    setState((prev) => {
-      const newState = { ...prev, ...updates };
-      onStateChange?.(newState);
-      return newState;
-    });
-  }, [onStateChange]);
-
-  // Handle online/offline status
-  useEffect(() => {
-    const handleOnline = () => {
-      updateState({ isOffline: false });
-      // Reconnect when back online
-      providerRef.current?.connect();
-    };
-
-    const handleOffline = () => {
-      updateState({ isOffline: true });
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [updateState]);
-
-  // Initialize Yjs and connect
-  useEffect(() => {
-    if (!enabled) return;
-
-    // Create Y.Doc
-    const doc = new Y.Doc();
-    docRef.current = doc;
-
-    // Create awareness
-    const awareness = new awarenessProtocol.Awareness(doc);
-    awarenessRef.current = awareness;
-
-    // Set up IndexedDB persistence if enabled
-    if (fullConfig.enableOfflinePersistence) {
-      const indexeddb = new IndexeddbPersistence(
-        `certeafiles-${fullConfig.roomId}`,
-        doc
-      );
-      indexeddbRef.current = indexeddb;
-
-      indexeddb.on('synced', () => {
-        console.log('[CollaborationPlugin] IndexedDB synced');
-      });
-    }
-
-    // Create WebSocket provider
-    const provider = new WebSocketProvider(
-      doc,
-      awareness,
-      fullConfig.roomId,
-      fullConfig.serverUrl,
-      fullConfig.user,
-      {
-        reconnectDelay: fullConfig.reconnectDelay,
-        maxReconnectAttempts: fullConfig.maxReconnectAttempts,
+  // Provider factory - creates a new provider for the given room
+  const providerFactory = useCallback(
+    (id: string, yjsDocMap: Map<string, Y.Doc>): Provider => {
+      // Get or create the Y.Doc for this room
+      let doc = yjsDocMap.get(id);
+      if (!doc) {
+        doc = new Y.Doc();
+        yjsDocMap.set(id, doc);
       }
-    );
-    providerRef.current = provider;
 
-    // Set up callbacks
-    provider.onStatusChange((status) => {
-      updateState({ status });
-      onStatusChange?.(status);
-    });
+      const collaborationUser: CollaborationUser = {
+        id: userId,
+        name: userName,
+        color: userColor,
+      };
 
-    provider.onSyncChange((synced) => {
-      updateState({ isSynced: synced, lastSyncedAt: synced ? new Date() : undefined });
-      onSyncChange?.(synced);
-    });
+      const provider = new WebSocketProvider(roomId, serverUrl, collaborationUser, doc);
 
-    provider.onUsersChange((users) => {
-      updateState({ users });
-      onUsersChange?.(users);
-    });
+      // Set up callbacks
+      if (onStatusChange) {
+        provider.onStatus(onStatusChange);
+      }
+      if (onSyncChange) {
+        provider.onSync(onSyncChange);
+      }
+      if (onUsersChange) {
+        provider.onUsers(onUsersChange);
+      }
+      if (onStateChange) {
+        provider.onStatus((status) => {
+          onStateChange({
+            status,
+            isSynced: provider.isSynced(),
+            isOffline: !navigator.onLine,
+            users: provider.getUsers(),
+          });
+        });
+      }
 
-    // Connect if online
-    if (navigator.onLine) {
-      provider.connect();
-    }
+      // Connect with a small delay
+      setTimeout(() => {
+        provider.connect();
+      }, 100);
 
-    // Clean up
-    return () => {
-      provider.destroy();
-      indexeddbRef.current?.destroy();
-      doc.destroy();
-    };
-  }, [
-    enabled,
-    fullConfig.roomId,
-    fullConfig.serverUrl,
-    fullConfig.user.id,
-    fullConfig.user.name,
-    fullConfig.user.color,
-    fullConfig.enableOfflinePersistence,
-    fullConfig.reconnectDelay,
-    fullConfig.maxReconnectAttempts,
-    onStatusChange,
-    onSyncChange,
-    onUsersChange,
-    updateState,
-  ]);
+      // Cast to Provider - our implementation satisfies the interface
+      return provider as unknown as Provider;
+    },
+    [roomId, serverUrl, userId, userName, userColor, onStatusChange, onSyncChange, onUsersChange, onStateChange]
+  );
 
-  // Bind Yjs to Lexical editor
-  useEffect(() => {
-    if (!enabled || !docRef.current || !awarenessRef.current) return;
+  if (!enabled) {
+    return null;
+  }
 
-    // TODO: Integrate with @lexical/yjs when proper bindings are set up
-    // For now, we're setting up the provider infrastructure
-
-    // The actual Lexical integration would use:
-    // import { CollaborationPlugin as LexicalCollabPlugin } from '@lexical/react/LexicalCollaborationPlugin';
-    // But we're creating our own provider layer for more control
-
-    console.log('[CollaborationPlugin] Yjs provider initialized for room:', fullConfig.roomId);
-  }, [enabled, fullConfig.roomId, editor]);
-
-  return null;
+  return (
+    <LexicalCollaborationPlugin
+      id={roomId}
+      providerFactory={providerFactory}
+      shouldBootstrap={true}
+      username={userName}
+      cursorColor={cursorColor}
+      initialEditorState={null}
+    />
+  );
 }
 
 export default CollaborationPlugin;

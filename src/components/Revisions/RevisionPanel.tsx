@@ -1,15 +1,12 @@
 /**
- * RevisionPanel - Panel for managing tracked changes
+ * RevisionPanel - Panel for managing document versions
  * Per Constitution Section 6 - Track Changes
+ *
+ * Note: This component is kept for backwards compatibility.
+ * The main version management UI is now in VersionsTabContent (DemoApp.tsx)
  */
-import { useState, useMemo, useCallback } from 'react';
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { useRevisionStore } from '../../stores/revisionStore';
-import {
-  ACCEPT_ALL_REVISIONS_COMMAND,
-  REJECT_ALL_REVISIONS_COMMAND,
-} from '../../plugins/TrackChangesPlugin';
-import { RevisionItem } from './RevisionItem';
+import { useCallback } from 'react';
+import { useRevisionStore, type DocumentVersion } from '../../stores/revisionStore';
 import './RevisionPanel.css';
 
 export interface RevisionPanelProps {
@@ -19,75 +16,35 @@ export interface RevisionPanelProps {
   onClose: () => void;
 }
 
-type FilterType = 'all' | 'insertion' | 'deletion';
-type FilterAuthor = 'all' | string;
-
 /**
- * RevisionPanel component
+ * RevisionPanel component - Version history panel
  */
 export function RevisionPanel({
   isOpen,
   onClose,
 }: RevisionPanelProps): JSX.Element | null {
-  const [editor] = useLexicalComposerContext();
-  const { revisions } = useRevisionStore();
-  const [filterType, setFilterType] = useState<FilterType>('all');
-  const [filterAuthor, setFilterAuthor] = useState<FilterAuthor>('all');
-  const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
+  const versions = useRevisionStore((state) => state.getAllVersions());
+  const deleteVersion = useRevisionStore((state) => state.deleteVersion);
+  const restoreVersion = useRevisionStore((state) => state.restoreVersion);
 
-  // Get stats
-  const stats = useMemo(() => {
-    const allRevisions = Array.from(revisions.values());
-    const pendingRevisions = allRevisions.filter((r) => r.status === 'pending');
-    return {
-      total: pendingRevisions.length,
-      insertions: pendingRevisions.filter((r) => r.type === 'insertion').length,
-      deletions: pendingRevisions.filter((r) => r.type === 'deletion').length,
-    };
-  }, [revisions]);
-
-  // Get unique authors
-  const authors = useMemo(() => {
-    const authorMap = new Map<string, string>();
-    revisions.forEach((r) => {
-      if (r.status === 'pending') {
-        authorMap.set(r.author.id, r.author.name);
-      }
+  const formatDateTime = useCallback((date: Date) => {
+    const d = new Date(date);
+    return d.toLocaleString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
-    return Array.from(authorMap.entries());
-  }, [revisions]);
-
-  // Filter revisions
-  const filteredRevisions = useMemo(() => {
-    let result = Array.from(revisions.values()).filter(
-      (r) => r.status === 'pending'
-    );
-
-    if (filterType !== 'all') {
-      result = result.filter((r) => r.type === filterType);
-    }
-
-    if (filterAuthor !== 'all') {
-      result = result.filter((r) => r.author.id === filterAuthor);
-    }
-
-    // Sort by timestamp, newest first
-    result.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-    return result;
-  }, [revisions, filterType, filterAuthor]);
-
-  const handleAcceptAll = useCallback(() => {
-    editor.dispatchCommand(ACCEPT_ALL_REVISIONS_COMMAND, undefined);
-  }, [editor]);
-
-  const handleRejectAll = useCallback(() => {
-    editor.dispatchCommand(REJECT_ALL_REVISIONS_COMMAND, undefined);
-  }, [editor]);
-
-  const handleSelectRevision = useCallback((revisionId: string) => {
-    setSelectedRevisionId((prev) => (prev === revisionId ? null : revisionId));
   }, []);
+
+  const handleRestore = useCallback((versionId: string) => {
+    restoreVersion(versionId);
+  }, [restoreVersion]);
+
+  const handleDelete = useCallback((versionId: string) => {
+    deleteVersion(versionId);
+  }, [deleteVersion]);
 
   if (!isOpen) return null;
 
@@ -97,15 +54,14 @@ export function RevisionPanel({
       <div className="revision-panel__header">
         <h3 className="revision-panel__title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Track Changes
+          Historique des versions
         </h3>
         <button
           className="revision-panel__close"
           onClick={onClose}
-          title="Close panel"
+          title="Fermer le panneau"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -117,96 +73,59 @@ export function RevisionPanel({
       {/* Stats */}
       <div className="revision-panel__stats">
         <div className="revision-panel__stat">
-          <span className="revision-panel__stat-value">{stats.total}</span>
-          <span className="revision-panel__stat-label">Changes</span>
-        </div>
-        <div className="revision-panel__stat revision-panel__stat--insertion">
-          <span className="revision-panel__stat-value">{stats.insertions}</span>
-          <span className="revision-panel__stat-label">Insertions</span>
-        </div>
-        <div className="revision-panel__stat revision-panel__stat--deletion">
-          <span className="revision-panel__stat-value">{stats.deletions}</span>
-          <span className="revision-panel__stat-label">Deletions</span>
+          <span className="revision-panel__stat-value">{versions.length}</span>
+          <span className="revision-panel__stat-label">Versions</span>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="revision-panel__filters">
-        <div className="revision-panel__filter">
-          <label className="revision-panel__filter-label">Type</label>
-          <select
-            className="revision-panel__filter-select"
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value as FilterType)}
-          >
-            <option value="all">All types</option>
-            <option value="insertion">Insertions only</option>
-            <option value="deletion">Deletions only</option>
-          </select>
-        </div>
-        {authors.length > 1 && (
-          <div className="revision-panel__filter">
-            <label className="revision-panel__filter-label">Author</label>
-            <select
-              className="revision-panel__filter-select"
-              value={filterAuthor}
-              onChange={(e) => setFilterAuthor(e.target.value)}
-            >
-              <option value="all">All authors</option>
-              {authors.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      {/* Bulk actions */}
-      {stats.total > 0 && (
-        <div className="revision-panel__bulk-actions">
-          <button
-            className="revision-panel__bulk-button revision-panel__bulk-button--accept"
-            onClick={handleAcceptAll}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Accept All
-          </button>
-          <button
-            className="revision-panel__bulk-button revision-panel__bulk-button--reject"
-            onClick={handleRejectAll}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-            Reject All
-          </button>
-        </div>
-      )}
-
-      {/* Revision list */}
+      {/* Version list */}
       <div className="revision-panel__list">
-        {filteredRevisions.length === 0 ? (
+        {versions.length === 0 ? (
           <div className="revision-panel__empty">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p>No pending changes</p>
-            <span>Changes will appear here when track changes is enabled</span>
+            <p>Aucune version sauvegardée</p>
+            <span>Cliquez sur "Sauvegarder version" pour créer un point de restauration</span>
           </div>
         ) : (
-          filteredRevisions.map((revision) => (
-            <RevisionItem
-              key={revision.id}
-              revision={revision}
-              isSelected={selectedRevisionId === revision.id}
-              onSelect={handleSelectRevision}
-            />
+          versions.map((version: DocumentVersion, index: number) => (
+            <div
+              key={version.id}
+              className="revision-panel__item"
+            >
+              <div className="revision-panel__item-header">
+                <div className="revision-panel__item-badge">
+                  {versions.length - index}
+                </div>
+                <div className="revision-panel__item-info">
+                  <span className="revision-panel__item-label">{version.label}</span>
+                  <span className="revision-panel__item-meta">
+                    {version.author.name} • {formatDateTime(version.createdAt)}
+                  </span>
+                </div>
+              </div>
+              <div className="revision-panel__item-actions">
+                <button
+                  className="revision-panel__action-btn revision-panel__action-btn--restore"
+                  onClick={() => handleRestore(version.id)}
+                  title="Restaurer cette version"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+                <button
+                  className="revision-panel__action-btn revision-panel__action-btn--delete"
+                  onClick={() => handleDelete(version.id)}
+                  title="Supprimer cette version"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           ))
         )}
       </div>

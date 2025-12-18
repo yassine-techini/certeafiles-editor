@@ -2,7 +2,7 @@
  * Certeafiles Editor Application
  * Per Constitution Section 9.1 - Architecture Finale
  */
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import type { EditorState, LexicalEditor } from 'lexical';
 
 import { CerteafilesEditor, ZoomControl } from './components/Editor';
@@ -22,19 +22,13 @@ function App(): JSX.Element {
   // Folio store state and actions
   const activeFolioId = useFolioStore((state) => state.activeFolioId);
   const activeFolio = useFolioStore((state) => state.getActiveFolio());
-  const { initialize, toggleOrientation } = useFolioStore.getState();
+  const { toggleOrientation } = useFolioStore.getState();
 
   // Thumbnail generation hook
   const { thumbnails, generateThumbnail } = useFolioThumbnails({
     debounceMs: 500,
     autoUpdate: true,
   });
-
-  // Initialize folio store on mount
-  useEffect(() => {
-    console.log('[App] Initializing folio store');
-    initialize();
-  }, [initialize]);
 
   // Get orientation from active folio
   const orientation: Orientation = activeFolio?.orientation ?? 'portrait';

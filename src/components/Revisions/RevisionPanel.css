@@ -176,6 +176,27 @@
 .revision-panel__list {
   flex: 1;
   overflow-y: auto;
+  /* Custom scrollbar - blue theme */
+  scrollbar-width: thin;
+  scrollbar-color: #3b82f6 #f3f4f6;
+}
+
+.revision-panel__list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.revision-panel__list::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 2.5px;
+}
+
+.revision-panel__list::-webkit-scrollbar-thumb {
+  background: #3b82f6;
+  border-radius: 2.5px;
+}
+
+.revision-panel__list::-webkit-scrollbar-thumb:hover {
+  background: #2563eb;
 }
 
 .revision-panel__empty {

@@ -2,7 +2,6 @@
  * ImageNode - Custom image node for Lexical editor
  * Per Constitution Section 3.3 - Custom Nodes
  */
-import { Suspense, lazy } from 'react';
 import type {
   DOMConversionMap,
   DOMConversionOutput,
@@ -19,9 +18,7 @@ import {
   createCommand,
   DecoratorNode,
 } from 'lexical';
-
-// Lazy load the ImageComponent to avoid circular dependencies
-const ImageComponent = lazy(() => import('../components/Editor/ImageComponent'));
+import { ImageComponent } from '../components/Editor/ImageComponent';
 
 export type ImageAlignment = 'left' | 'center' | 'right' | 'full';
 
@@ -252,17 +249,15 @@ export class ImageNode extends DecoratorNode<JSX.Element> {
 
   override decorate(): JSX.Element {
     return (
-      <Suspense fallback={<div className="image-loading">Loading...</div>}>
-        <ImageComponent
-          src={this.__src}
-          altText={this.__altText}
-          width={this.__width}
-          height={this.__height}
-          alignment={this.__alignment}
-          caption={this.__caption}
-          nodeKey={this.getKey()}
-        />
-      </Suspense>
+      <ImageComponent
+        src={this.__src}
+        altText={this.__altText}
+        width={this.__width}
+        height={this.__height}
+        alignment={this.__alignment}
+        caption={this.__caption}
+        nodeKey={this.getKey()}
+      />
     );
   }
 

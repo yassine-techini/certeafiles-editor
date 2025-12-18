@@ -22,7 +22,9 @@ import {
   Link,
   Code,
   Highlighter,
+  MessageSquarePlus,
 } from 'lucide-react';
+import { CREATE_COMMENT_COMMAND } from '../../plugins/CommentPlugin';
 
 export interface FloatingToolbarProps {
   /** Additional CSS class */
@@ -45,7 +47,7 @@ interface FormatState {
 }
 
 const TOOLBAR_HEIGHT = 40;
-const TOOLBAR_WIDTH = 280;
+const TOOLBAR_WIDTH = 340;
 const VIEWPORT_PADDING = 10;
 
 /**
@@ -291,6 +293,16 @@ export function FloatingToolbar({
     });
   }, [editor]);
 
+  const handleComment = useCallback(() => {
+    const comment = prompt('Ajouter un commentaire:');
+    if (comment && comment.trim()) {
+      editor.dispatchCommand(CREATE_COMMENT_COMMAND, {
+        content: comment.trim(),
+        type: 'remark',
+      });
+    }
+  }, [editor]);
+
   if (!isVisible || !position) {
     return null;
   }
@@ -407,6 +419,18 @@ export function FloatingToolbar({
         aria-pressed={formatState.isLink}
       >
         <Link size={16} />
+      </button>
+
+      <div className="w-px h-5 bg-gray-600 mx-1" />
+
+      {/* Comment */}
+      <button
+        type="button"
+        onClick={handleComment}
+        className="p-2 rounded hover:bg-gray-700 transition-colors text-amber-400 hover:text-amber-300"
+        title="Ajouter un commentaire"
+      >
+        <MessageSquarePlus size={16} />
       </button>
     </div>,
     document.body

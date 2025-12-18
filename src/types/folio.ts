@@ -2,6 +2,7 @@ import type { SerializedEditorState } from 'lexical';
 
 export type FolioOrientation = 'portrait' | 'landscape';
 export type NumberingStyle = 'continuous' | 'reset' | 'roman' | 'alpha' | 'none';
+export type FolioStatus = 'draft' | 'modified' | 'validated';
 
 /**
  * Margins configuration in millimeters
@@ -23,6 +24,16 @@ export const DEFAULT_MARGINS: FolioMargins = {
   left: 20,
 };
 
+/**
+ * Metadata for imported PDF pages
+ */
+export interface FolioMetadata {
+  pdfPageImage?: string;
+  pdfPageNumber?: number;
+  pdfTextContent?: string;
+  [key: string]: unknown;
+}
+
 export interface Folio {
   id: string;
   index: number;
@@ -33,6 +44,8 @@ export interface Folio {
   headerId: string | null;
   footerId: string | null;
   locked: boolean;
+  status: FolioStatus;
+  metadata: FolioMetadata;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,6 +84,8 @@ export function createEmptyFolio(
     headerId: options.headerId ?? null,
     footerId: options.footerId ?? null,
     locked: options.locked ?? false,
+    status: options.status ?? 'draft',
+    metadata: options.metadata ?? {},
     createdAt: now,
     updatedAt: now,
   };

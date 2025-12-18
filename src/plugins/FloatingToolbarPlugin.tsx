@@ -23,13 +23,17 @@ import {
   Link,
   Code,
   Highlighter,
+  MessageSquarePlus,
 } from 'lucide-react';
+import { useCommentStore } from '../stores/commentStore';
 
 export interface FloatingToolbarPluginProps {
   /** Whether to show in tables */
   showInTables?: boolean;
   /** Additional CSS class */
   className?: string;
+  /** Callback when comment button is clicked */
+  onCommentClick?: (() => void) | undefined;
 }
 
 interface ToolbarPosition {
@@ -48,7 +52,7 @@ interface FormatState {
 }
 
 const TOOLBAR_HEIGHT = 40;
-const TOOLBAR_WIDTH = 280;
+const TOOLBAR_WIDTH = 340;
 const VIEWPORT_PADDING = 10;
 
 /**
@@ -109,6 +113,7 @@ function getSelectionRect(): DOMRect | null {
 export function FloatingToolbarPlugin({
   showInTables = true,
   className = '',
+  onCommentClick,
 }: FloatingToolbarPluginProps): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
   const [isVisible, setIsVisible] = useState(false);
@@ -352,6 +357,26 @@ export function FloatingToolbarPlugin({
     });
   }, [editor, updateFormatState]);
 
+  const handleComment = useCallback(() => {
+    editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      if (!$isRangeSelection(selection)) return;
+
+      const quotedText = selection.getTextContent();
+      if (!quotedText.trim()) return;
+
+      // Start pending comment in store
+      useCommentStore.getState().startPendingComment(
+        quotedText,
+        selection.anchor.key
+      );
+
+      // Notify parent to open comments panel
+      onCommentClick?.();
+    });
+    hideToolbar();
+  }, [editor, hideToolbar, onCommentClick]);
+
   if (!isVisible || !position) {
     return null;
   }
@@ -470,6 +495,18 @@ export function FloatingToolbarPlugin({
         aria-pressed={formatState.isLink}
       >
         <Link size={16} />
+      </button>
+
+      <div className="w-px h-5 bg-gray-600 mx-1" />
+
+      {/* Comment */}
+      <button
+        type="button"
+        onClick={handleComment}
+        className="p-2 rounded hover:bg-gray-700 transition-colors text-amber-400 hover:text-amber-300"
+        title="Ajouter un commentaire"
+      >
+        <MessageSquarePlus size={16} />
       </button>
     </div>,
     document.body

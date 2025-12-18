@@ -88,7 +88,8 @@ export function HeaderFooterPlugin({
       node: HeaderNode | FooterNode,
       content: HeaderFooterContent | null,
       pageNumber: number,
-      totalPages: number
+      totalPages: number,
+      isHeader: boolean = true
     ) => {
       // Clear existing children
       node.clear();
@@ -101,26 +102,45 @@ export function HeaderFooterPlugin({
         return;
       }
 
-      // Create a flex container paragraph
-      const container = $createParagraphNode();
+      // For header, create a table-like structured content
+      if (isHeader) {
+        // Create three paragraphs for left, center, right columns
+        const leftPara = $createParagraphNode();
+        const centerPara = $createParagraphNode();
+        const rightPara = $createParagraphNode();
 
-      // Left segment
-      const leftText = createSegmentContent(content.left, pageNumber, totalPages);
-      // Center segment
-      const centerText = createSegmentContent(content.center, pageNumber, totalPages);
-      // Right segment
-      const rightText = createSegmentContent(content.right, pageNumber, totalPages);
+        // Left: Logo placeholder
+        const leftText = createSegmentContent(content.left, pageNumber, totalPages) || '[Logo]';
+        leftPara.append($createTextNode(leftText));
 
-      // Build display text
-      const parts: string[] = [];
-      if (leftText) parts.push(leftText);
-      if (centerText) parts.push(centerText);
-      if (rightText) parts.push(rightText);
+        // Center: Document title and group
+        const centerText = createSegmentContent(content.center, pageNumber, totalPages) || 'Document';
+        centerPara.append($createTextNode(centerText));
 
-      const displayText = parts.join('  |  ') || ' ';
-      container.append($createTextNode(displayText));
+        // Right: Metadata (version, date, page)
+        const rightText = createSegmentContent(content.right, pageNumber, totalPages) ||
+          `Page ${pageNumber} / ${totalPages}`;
+        rightPara.append($createTextNode(rightText));
 
-      node.append(container);
+        node.append(leftPara);
+        node.append(centerPara);
+        node.append(rightPara);
+      } else {
+        // For footer, simple centered content
+        const container = $createParagraphNode();
+        const leftText = createSegmentContent(content.left, pageNumber, totalPages);
+        const centerText = createSegmentContent(content.center, pageNumber, totalPages);
+        const rightText = createSegmentContent(content.right, pageNumber, totalPages);
+
+        const parts: string[] = [];
+        if (leftText) parts.push(leftText);
+        if (centerText) parts.push(centerText);
+        if (rightText) parts.push(rightText);
+
+        const displayText = parts.join(' - ') || `Page ${pageNumber} / ${totalPages}`;
+        container.append($createTextNode(displayText));
+        node.append(container);
+      }
     },
     [createSegmentContent]
   );
@@ -171,7 +191,7 @@ export function HeaderFooterPlugin({
       }
 
       // Update content
-      updateNodeContent(headerNode, resolved.content, pageNumber, totalPages);
+      updateNodeContent(headerNode, resolved.content, pageNumber, totalPages, true);
     },
     [getHeaderForFolio, defaultHeaderId, updateNodeContent]
   );
@@ -217,7 +237,7 @@ export function HeaderFooterPlugin({
       }
 
       // Update content
-      updateNodeContent(footerNode, resolved.content, pageNumber, totalPages);
+      updateNodeContent(footerNode, resolved.content, pageNumber, totalPages, false);
     },
     [getFooterForFolio, defaultFooterId, updateNodeContent]
   );

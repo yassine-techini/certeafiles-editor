@@ -10,11 +10,46 @@ import {
   type Folio,
   type FolioSection,
   type FolioOrientation,
+  type FolioStatus,
   type FolioCreatePayload,
   type FolioMargins,
+  type FolioMetadata,
   createEmptyFolio,
   DEFAULT_MARGINS,
 } from '../types/folio';
+import { generateLexicalContent } from '../utils/demoContent';
+
+// Get demo configuration from URL
+type DemoType = 'empty' | 'small' | 'large';
+
+function getDemoConfigFromURL(): { type: DemoType; pageCount: number } {
+  if (typeof window === 'undefined') {
+    return { type: 'empty', pageCount: 1 };
+  }
+  const urlParams = new URLSearchParams(window.location.search);
+  const demo = urlParams.get('demo') as DemoType | null;
+
+  switch (demo) {
+    case 'small':
+      return { type: 'small', pageCount: 20 };
+    case 'large':
+      return { type: 'large', pageCount: 300 };
+    case 'empty':
+    default:
+      return { type: 'empty', pageCount: 1 };
+  }
+}
+
+/**
+ * Generate demo content for a folio page using the rich content generator
+ */
+function generateDemoContent(pageIndex: number, totalPages: number): SerializedEditorState {
+  return generateLexicalContent(pageIndex, {
+    includeTable: true,
+    includeImage: true,
+    totalPages,
+  }) as SerializedEditorState;
+}
 
 /**
  * Folio store state interface
@@ -41,6 +76,9 @@ export interface FolioState {
   setFolioMargins: (id: string, margins: FolioMargins) => void;
   setActiveFolio: (id: string | null) => void;
   lockFolio: (id: string, locked: boolean) => void;
+  setFolioStatus: (id: string, status: FolioStatus) => void;
+  toggleFolioStatus: (id: string) => void;
+  setFolioMetadata: (id: string, metadata: FolioMetadata) => void;
 
   // Section actions
   createSection: (name: string, afterSectionId?: string) => string;
@@ -313,6 +351,82 @@ export const useFolioStore = create<FolioState>()(
         set({ folios: newFolios });
       },
 
+      // Set folio status
+      setFolioStatus: (id: string, status: FolioStatus) => {
+        const { folios } = get();
+        const folio = folios.get(id);
+
+        if (!folio) {
+          console.warn('[FolioStore] setFolioStatus: Folio not found:', id);
+          return;
+        }
+
+        const newFolios = new Map(folios);
+        newFolios.set(id, {
+          ...folio,
+          status,
+          updatedAt: new Date(),
+        });
+
+        console.log('[FolioStore] setFolioStatus:', { id, status });
+
+        set({ folios: newFolios });
+      },
+
+      // Toggle folio status between modified and validated
+      toggleFolioStatus: (id: string) => {
+        const { folios } = get();
+        const folio = folios.get(id);
+
+        if (!folio) {
+          console.warn('[FolioStore] toggleFolioStatus: Folio not found:', id);
+          return;
+        }
+
+        // Cycle: draft -> modified -> validated -> modified
+        let newStatus: FolioStatus;
+        if (folio.status === 'draft') {
+          newStatus = 'modified';
+        } else if (folio.status === 'modified') {
+          newStatus = 'validated';
+        } else {
+          newStatus = 'modified';
+        }
+
+        const newFolios = new Map(folios);
+        newFolios.set(id, {
+          ...folio,
+          status: newStatus,
+          updatedAt: new Date(),
+        });
+
+        console.log('[FolioStore] toggleFolioStatus:', { id, oldStatus: folio.status, newStatus });
+
+        set({ folios: newFolios });
+      },
+
+      // Set folio metadata (for PDF import, etc.)
+      setFolioMetadata: (id: string, metadata: FolioMetadata) => {
+        const { folios } = get();
+        const folio = folios.get(id);
+
+        if (!folio) {
+          console.warn('[FolioStore] setFolioMetadata: Folio not found:', id);
+          return;
+        }
+
+        const newFolios = new Map(folios);
+        newFolios.set(id, {
+          ...folio,
+          metadata: { ...folio.metadata, ...metadata },
+          updatedAt: new Date(),
+        });
+
+        console.log('[FolioStore] setFolioMetadata:', { id, metadata });
+
+        set({ folios: newFolios });
+      },
+
       // Create a new section
       createSection: (name: string, afterSectionId?: string) => {
         const id = uuidv4();
@@ -415,7 +529,7 @@ export const useFolioStore = create<FolioState>()(
         });
       },
 
-      // Initialize with a default folio
+      // Initialize with folios based on URL demo parameter
       initialize: () => {
         const { folios } = get();
 
@@ -425,14 +539,36 @@ export const useFolioStore = create<FolioState>()(
           return;
         }
 
-        const id = uuidv4();
-        const defaultFolio = createEmptyFolio(id, 0);
+        // Get configuration from URL
+        const config = getDemoConfigFromURL();
+        const { pageCount, type: demoType } = config;
 
-        console.log('[FolioStore] initialize: Creating default folio', { id });
+        // Create the specified number of pages
+        const count = Math.max(1, Math.min(pageCount, 500)); // Limit to 500 pages
+        const newFolios = new Map<string, Folio>();
+        let firstId: string | null = null;
+
+        // Generate content based on demo type
+        const shouldGenerateContent = demoType === 'small' || demoType === 'large';
+
+        for (let i = 0; i < count; i++) {
+          const id = uuidv4();
+          const folio = createEmptyFolio(id, i);
+
+          // Add demo content for non-empty demos
+          if (shouldGenerateContent) {
+            folio.content = generateDemoContent(i, count);
+          }
+
+          newFolios.set(id, folio);
+          if (i === 0) firstId = id;
+        }
+
+        console.log('[FolioStore] initialize: Creating folios', { count, demoType });
 
         set({
-          folios: new Map([[id, defaultFolio]]),
-          activeFolioId: id,
+          folios: newFolios,
+          activeFolioId: firstId,
         });
       },
     })),

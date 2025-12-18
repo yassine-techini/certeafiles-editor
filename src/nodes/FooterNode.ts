@@ -179,11 +179,12 @@ export class FooterNode extends ElementNode {
       footer.className += ` ${theme.footer}`;
     }
 
-    // Set dimensions and positioning
+    // Set dimensions and positioning - fixed at bottom of folio
     const heightPx = this.__height * A4_CONSTANTS.MM_TO_PX;
     footer.style.height = `${heightPx}px`;
     footer.style.minHeight = `${heightPx}px`;
-    footer.style.position = 'relative';
+    footer.style.flexShrink = '0'; // Don't shrink
+    footer.style.marginTop = 'auto'; // Push to bottom
     footer.style.width = '100%';
     footer.style.display = 'flex';
     footer.style.alignItems = 'center';
@@ -194,7 +195,7 @@ export class FooterNode extends ElementNode {
     footer.style.color = '#6b7280';
     footer.style.borderTop = '1px solid #e5e7eb';
     footer.style.backgroundColor = '#fafafa';
-    footer.style.marginTop = '8px';
+    footer.style.marginBottom = `${A4_CONSTANTS.MARGIN_BOTTOM * A4_CONSTANTS.MM_TO_PX * 0.5}px`;
 
     return footer;
   }
