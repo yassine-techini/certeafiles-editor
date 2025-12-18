@@ -2,13 +2,10 @@
  * CollaborationPlugin - Real-time collaboration using Yjs and Cloudflare Durable Objects
  * Per Constitution Section 7 - Collaboration
  *
- * Full Lexical-Yjs synchronization with custom WebSocket provider
+ * Simplified version that manages WebSocket connection and status
  */
-import { useCallback, useMemo } from 'react';
-import { CollaborationPlugin as LexicalCollaborationPlugin } from '@lexical/react/LexicalCollaborationPlugin';
-import type { Provider } from '@lexical/yjs';
+import { useEffect, useRef, useMemo } from 'react';
 import * as Y from 'yjs';
-import { IndexeddbPersistence } from 'y-indexeddb';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
@@ -26,15 +23,12 @@ const MessageType = {
   QUERY_AWARENESS: 3,
 } as const;
 
-type EventCallback = (...args: unknown[]) => void;
-
 /**
- * Custom WebSocket Provider for Yjs that connects to Cloudflare Durable Objects
- * Implements the Provider interface required by @lexical/yjs
+ * WebSocket Provider for Yjs - connects to Cloudflare Durable Objects
  */
 class WebSocketProvider {
   private ws: WebSocket | null = null;
-  private _doc: Y.Doc;
+  doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   private serverUrl: string;
   private roomId: string;
@@ -43,36 +37,26 @@ class WebSocketProvider {
   private _connected = false;
   private destroyed = false;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = 10;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private connecting = false;
-  private indexeddb: IndexeddbPersistence | null = null;
-
-  // Event emitter pattern for Provider interface
-  private eventListeners: Map<string, Set<EventCallback>> = new Map();
 
   private statusCallbacks = new Set<(status: ConnectionStatus) => void>();
   private syncCallbacks = new Set<(synced: boolean) => void>();
   private usersCallbacks = new Set<(users: CollaborationUser[]) => void>();
 
-  constructor(roomId: string, serverUrl: string, user: CollaborationUser, doc: Y.Doc) {
+  constructor(roomId: string, serverUrl: string, user: CollaborationUser) {
     this.roomId = roomId;
     this.serverUrl = serverUrl;
     this.user = user;
-    this._doc = doc;
-    this.awareness = new awarenessProtocol.Awareness(doc);
+    this.doc = new Y.Doc();
+    this.awareness = new awarenessProtocol.Awareness(this.doc);
 
-    // Set local user state for awareness
+    // Set local user state
     this.awareness.setLocalStateField('user', {
       id: user.id,
       name: user.name,
       color: user.color,
-    });
-
-    // Set up IndexedDB persistence
-    this.indexeddb = new IndexeddbPersistence(`certeafiles-${roomId}`, doc);
-    this.indexeddb.on('synced', () => {
-      console.log('[WebSocketProvider] IndexedDB synced');
     });
 
     // Listen for awareness changes
@@ -80,34 +64,12 @@ class WebSocketProvider {
       this.notifyUsers();
     });
 
-    console.log('[WebSocketProvider] Created for room:', roomId);
-  }
-
-  // Provider interface: on method
-  on(event: string, callback: EventCallback): void {
-    if (!this.eventListeners.has(event)) {
-      this.eventListeners.set(event, new Set());
-    }
-    this.eventListeners.get(event)!.add(callback);
-  }
-
-  // Provider interface: off method
-  off(event: string, callback: EventCallback): void {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.delete(callback);
-    }
-  }
-
-  private emit(event: string, ...args: unknown[]): void {
-    const listeners = this.eventListeners.get(event);
-    if (listeners) {
-      listeners.forEach((callback) => callback(...args));
-    }
+    console.log('[CollaborationProvider] Created for room:', roomId);
   }
 
   onStatus(callback: (status: ConnectionStatus) => void): () => void {
     this.statusCallbacks.add(callback);
+    // Immediately notify with current status
     callback(this._connected ? 'connected' : 'disconnected');
     return () => this.statusCallbacks.delete(callback);
   }
@@ -125,16 +87,13 @@ class WebSocketProvider {
   }
 
   private notifyStatus(status: ConnectionStatus): void {
+    console.log('[CollaborationProvider] Status:', status);
     this.statusCallbacks.forEach((cb) => cb(status));
-    this.emit('status', [{ status }]);
   }
 
   private notifySync(synced: boolean): void {
     this.synced = synced;
     this.syncCallbacks.forEach((cb) => cb(synced));
-    if (synced) {
-      this.emit('sync', true);
-    }
   }
 
   private notifyUsers(): void {
@@ -144,6 +103,11 @@ class WebSocketProvider {
 
   connect(): void {
     if (this.destroyed || this.connecting || this._connected) {
+      console.log('[CollaborationProvider] Skipping connect:', {
+        destroyed: this.destroyed,
+        connecting: this.connecting,
+        connected: this._connected
+      });
       return;
     }
 
@@ -157,7 +121,7 @@ class WebSocketProvider {
     url.searchParams.set('userName', this.user.name);
     url.searchParams.set('userColor', this.user.color);
 
-    console.log('[WebSocketProvider] Connecting to:', url.toString());
+    console.log('[CollaborationProvider] Connecting to:', url.toString());
 
     try {
       const ws = new WebSocket(url.toString());
@@ -169,7 +133,7 @@ class WebSocketProvider {
           return;
         }
 
-        console.log('[WebSocketProvider] Connected');
+        console.log('[CollaborationProvider] WebSocket connected');
         this.ws = ws;
         this.connecting = false;
         this._connected = true;
@@ -182,8 +146,8 @@ class WebSocketProvider {
         // Send awareness
         this.sendAwareness();
 
-        // Set up doc update listener
-        this._doc.on('update', this.handleDocUpdate);
+        // Set up listeners
+        this.doc.on('update', this.handleDocUpdate);
         this.awareness.on('update', this.handleAwarenessUpdate);
       };
 
@@ -193,7 +157,7 @@ class WebSocketProvider {
       };
 
       ws.onclose = (event) => {
-        console.log('[WebSocketProvider] Disconnected:', event.code);
+        console.log('[CollaborationProvider] WebSocket closed:', event.code, event.reason);
 
         if (this.ws === ws) {
           this.ws = null;
@@ -212,12 +176,12 @@ class WebSocketProvider {
         }
       };
 
-      ws.onerror = () => {
-        console.log('[WebSocketProvider] WebSocket error');
+      ws.onerror = (error) => {
+        console.error('[CollaborationProvider] WebSocket error:', error);
         this.connecting = false;
       };
     } catch (error) {
-      console.error('[WebSocketProvider] Connection error:', error);
+      console.error('[CollaborationProvider] Connection error:', error);
       this.connecting = false;
       this.notifyStatus('error');
       this.scheduleReconnect();
@@ -230,10 +194,11 @@ class WebSocketProvider {
     try {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MessageType.SYNC);
-      syncProtocol.writeSyncStep1(encoder, this._doc);
+      syncProtocol.writeSyncStep1(encoder, this.doc);
       this.ws.send(encoding.toUint8Array(encoder));
+      console.log('[CollaborationProvider] Sent sync step 1');
     } catch (e) {
-      console.error('[WebSocketProvider] Error sending sync step 1:', e);
+      console.error('[CollaborationProvider] Error sending sync step 1:', e);
     }
   }
 
@@ -245,28 +210,25 @@ class WebSocketProvider {
       encoding.writeVarUint(encoder, MessageType.AWARENESS);
       encoding.writeVarUint8Array(
         encoder,
-        awarenessProtocol.encodeAwarenessUpdate(this.awareness, [
-          this._doc.clientID,
-        ])
+        awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID])
       );
       this.ws.send(encoding.toUint8Array(encoder));
+      console.log('[CollaborationProvider] Sent awareness');
     } catch (e) {
-      console.error('[WebSocketProvider] Error sending awareness:', e);
+      console.error('[CollaborationProvider] Error sending awareness:', e);
     }
   }
 
   private scheduleReconnect(): void {
     if (this.destroyed || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('[WebSocketProvider] Max reconnect attempts reached');
+      console.log('[CollaborationProvider] Max reconnect attempts reached');
       this.notifyStatus('error');
       return;
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
-    console.log(
-      `[WebSocketProvider] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`
-    );
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+    console.log(`[CollaborationProvider] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     this.notifyStatus('reconnecting');
 
@@ -287,23 +249,15 @@ class WebSocketProvider {
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, MessageType.SYNC);
 
-        const syncMessageType = syncProtocol.readSyncMessage(
-          decoder,
-          encoder,
-          this._doc,
-          this
-        );
+        const syncMessageType = syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
 
-        if (
-          encoding.length(encoder) > 1 &&
-          this.ws?.readyState === WebSocket.OPEN
-        ) {
+        if (encoding.length(encoder) > 1 && this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(encoding.toUint8Array(encoder));
         }
 
         // Sync step 2 = synced
         if (syncMessageType === 1 && !this.synced) {
-          console.log('[WebSocketProvider] Synced with server');
+          console.log('[CollaborationProvider] Synced with server');
           this.notifySync(true);
         }
       } else if (messageType === MessageType.AWARENESS) {
@@ -311,18 +265,12 @@ class WebSocketProvider {
         awarenessProtocol.applyAwarenessUpdate(this.awareness, update, this);
       }
     } catch (e) {
-      console.error('[WebSocketProvider] Error handling message:', e);
+      console.error('[CollaborationProvider] Error handling message:', e);
     }
   };
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
-    if (
-      origin === this ||
-      this.destroyed ||
-      !this.ws ||
-      this.ws.readyState !== WebSocket.OPEN
-    )
-      return;
+    if (origin === this || this.destroyed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     try {
       const encoder = encoding.createEncoder();
@@ -330,25 +278,15 @@ class WebSocketProvider {
       syncProtocol.writeUpdate(encoder, update);
       this.ws.send(encoding.toUint8Array(encoder));
     } catch (e) {
-      console.error('[WebSocketProvider] Error sending doc update:', e);
+      console.error('[CollaborationProvider] Error sending doc update:', e);
     }
   };
 
   private handleAwarenessUpdate = (
-    {
-      added,
-      updated,
-      removed,
-    }: { added: number[]; updated: number[]; removed: number[] },
+    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown
   ): void => {
-    if (
-      origin === this ||
-      this.destroyed ||
-      !this.ws ||
-      this.ws.readyState !== WebSocket.OPEN
-    )
-      return;
+    if (origin === this || this.destroyed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const changed = added.concat(updated, removed);
     if (changed.length === 0) return;
@@ -362,28 +300,9 @@ class WebSocketProvider {
       );
       this.ws.send(encoding.toUint8Array(encoder));
     } catch (e) {
-      console.error('[WebSocketProvider] Error sending awareness update:', e);
+      console.error('[CollaborationProvider] Error sending awareness update:', e);
     }
   };
-
-  disconnect(): void {
-    console.log('[WebSocketProvider] Disconnecting');
-
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    this._doc.off('update', this.handleDocUpdate);
-    this.awareness.off('update', this.handleAwarenessUpdate);
-
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close(1000);
-    }
-    this.ws = null;
-    this._connected = false;
-    this.connecting = false;
-  }
 
   getUsers(): CollaborationUser[] {
     const users: CollaborationUser[] = [];
@@ -402,17 +321,54 @@ class WebSocketProvider {
     return this.synced;
   }
 
+  disconnect(): void {
+    console.log('[CollaborationProvider] Disconnecting');
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    this.doc.off('update', this.handleDocUpdate);
+    this.awareness.off('update', this.handleAwarenessUpdate);
+
+    if (this.ws) {
+      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+        this.ws.close(1000);
+      }
+      this.ws = null;
+    }
+    this._connected = false;
+    this.connecting = false;
+  }
+
   destroy(): void {
-    console.log('[WebSocketProvider] Destroying');
+    console.log('[CollaborationProvider] Destroying');
     this.destroyed = true;
     this.disconnect();
-    this.indexeddb?.destroy();
     this.awareness.destroy();
+    this.doc.destroy();
     this.statusCallbacks.clear();
     this.syncCallbacks.clear();
     this.usersCallbacks.clear();
-    this.eventListeners.clear();
   }
+}
+
+// Singleton provider cache
+const providerCache = new Map<string, WebSocketProvider>();
+
+function getOrCreateProvider(roomId: string, serverUrl: string, user: CollaborationUser): WebSocketProvider {
+  const key = `${roomId}`;
+  let provider = providerCache.get(key);
+  if (!provider || provider.isConnected() === false) {
+    // Create new provider if none exists or if disconnected
+    if (provider) {
+      provider.destroy();
+    }
+    provider = new WebSocketProvider(roomId, serverUrl, user);
+    providerCache.set(key, provider);
+  }
+  return provider;
 }
 
 export interface CollaborationPluginProps {
@@ -438,13 +394,6 @@ function getUserName(): string {
   return localStorage.getItem('certeafiles-user-name') || 'Utilisateur';
 }
 
-// Cursor colors for collaboration
-const CURSOR_COLORS = [
-  '#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
-  '#2196f3', '#03a9f4', '#00bcd4', '#009688',
-  '#4caf50', '#8bc34a', '#ff9800', '#ff5722',
-];
-
 export function CollaborationPlugin({
   roomId,
   serverUrl = 'https://certeafiles-yjs-server.yassine-techini.workers.dev',
@@ -454,46 +403,45 @@ export function CollaborationPlugin({
   onUsersChange,
   onStateChange,
   enabled = true,
-}: CollaborationPluginProps): JSX.Element | null {
+}: CollaborationPluginProps): null {
+  const providerRef = useRef<WebSocketProvider | null>(null);
+  const cleanupRef = useRef<(() => void)[]>([]);
+
   const userId = user?.id || getUserId();
   const userName = user?.name || getUserName();
   const userColor = user?.color || getColorForUser(userId);
 
-  // Cursor color based on user ID
-  const cursorColor = useMemo(() => {
-    const index = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return CURSOR_COLORS[index % CURSOR_COLORS.length];
-  }, [userId]);
+  const collaborationUser = useMemo(() => ({
+    id: userId,
+    name: userName,
+    color: userColor,
+  }), [userId, userName, userColor]);
 
-  // Provider factory - creates a new provider for the given room
-  const providerFactory = useCallback(
-    (id: string, yjsDocMap: Map<string, Y.Doc>): Provider => {
-      // Get or create the Y.Doc for this room
-      let doc = yjsDocMap.get(id);
-      if (!doc) {
-        doc = new Y.Doc();
-        yjsDocMap.set(id, doc);
-      }
+  useEffect(() => {
+    if (!enabled) {
+      console.log('[CollaborationPlugin] Disabled');
+      return;
+    }
 
-      const collaborationUser: CollaborationUser = {
-        id: userId,
-        name: userName,
-        color: userColor,
-      };
+    console.log('[CollaborationPlugin] Initializing for room:', roomId);
 
-      const provider = new WebSocketProvider(roomId, serverUrl, collaborationUser, doc);
+    const provider = getOrCreateProvider(roomId, serverUrl, collaborationUser);
+    providerRef.current = provider;
 
-      // Set up callbacks
-      if (onStatusChange) {
-        provider.onStatus(onStatusChange);
-      }
-      if (onSyncChange) {
-        provider.onSync(onSyncChange);
-      }
-      if (onUsersChange) {
-        provider.onUsers(onUsersChange);
-      }
-      if (onStateChange) {
+    // Set up callbacks
+    const cleanups: (() => void)[] = [];
+
+    if (onStatusChange) {
+      cleanups.push(provider.onStatus(onStatusChange));
+    }
+    if (onSyncChange) {
+      cleanups.push(provider.onSync(onSyncChange));
+    }
+    if (onUsersChange) {
+      cleanups.push(provider.onUsers(onUsersChange));
+    }
+    if (onStateChange) {
+      cleanups.push(
         provider.onStatus((status) => {
           onStateChange({
             status,
@@ -501,34 +449,35 @@ export function CollaborationPlugin({
             isOffline: !navigator.onLine,
             users: provider.getUsers(),
           });
-        });
-      }
+        })
+      );
+    }
 
-      // Connect with a small delay
-      setTimeout(() => {
-        provider.connect();
-      }, 100);
+    cleanupRef.current = cleanups;
 
-      // Cast to Provider - our implementation satisfies the interface
-      return provider as unknown as Provider;
-    },
-    [roomId, serverUrl, userId, userName, userColor, onStatusChange, onSyncChange, onUsersChange, onStateChange]
-  );
+    // Connect immediately
+    if (!provider.isConnected()) {
+      provider.connect();
+    }
 
-  if (!enabled) {
-    return null;
-  }
+    return () => {
+      console.log('[CollaborationPlugin] Cleaning up');
+      cleanupRef.current.forEach((cleanup) => cleanup());
+      cleanupRef.current = [];
+    };
+  }, [enabled, roomId, serverUrl, collaborationUser, onStatusChange, onSyncChange, onUsersChange, onStateChange]);
 
-  return (
-    <LexicalCollaborationPlugin
-      id={roomId}
-      providerFactory={providerFactory}
-      shouldBootstrap={true}
-      username={userName}
-      cursorColor={cursorColor}
-      initialEditorState={null}
-    />
-  );
+  // Cleanup on page unload
+  useEffect(() => {
+    const handleUnload = () => {
+      providerCache.forEach((p) => p.destroy());
+      providerCache.clear();
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, []);
+
+  return null;
 }
 
 export default CollaborationPlugin;

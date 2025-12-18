@@ -1,29 +1,26 @@
 {
-  "name": "certeafiles-editor-monorepo",
+  "name": "certeafiles-editor",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "CerteaFiles Editor - Professional WYSIWYG editor monorepo",
+  "description": "CerteaFiles Editor - Professional WYSIWYG document editor",
   "repository": {
     "type": "git",
     "url": "https://github.com/yassine-techini/certeafiles-editor"
   },
   "scripts": {
-    "dev": "pnpm --filter @certeafiles/demo dev",
-    "dev:editor": "pnpm --filter @certeafiles/editor dev",
-    "build": "pnpm --filter @certeafiles/editor build && pnpm --filter @certeafiles/demo build",
-    "build:editor": "pnpm --filter @certeafiles/editor build",
-    "build:demo": "pnpm --filter @certeafiles/demo build",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "format": "prettier --write .",
+    "format": "prettier --write src",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "deploy:dev": "pnpm build:demo && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy apps/demo/dist --project-name=certeafiles-editor-dev --commit-dirty=true",
-    "deploy:staging": "pnpm build:demo && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy apps/demo/dist --project-name=certeafiles-editor-staging --commit-dirty=true",
-    "deploy:prod": "pnpm build:demo && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy apps/demo/dist --project-name=certeafiles-editor-prod --commit-dirty=true"
+    "deploy:dev": "pnpm build && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy dist --project-name=certeafiles-editor-dev --commit-dirty=true",
+    "deploy:staging": "pnpm build && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy dist --project-name=certeafiles-editor-staging --commit-dirty=true",
+    "deploy:prod": "pnpm build && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy dist --project-name=certeafiles-editor-prod --commit-dirty=true"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
