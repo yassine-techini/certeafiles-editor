@@ -1,0 +1,75 @@
+{
+  "name": "@certeafiles/editor",
+  "version": "1.0.0",
+  "description": "CerteaFiles WYSIWYG Editor - A professional document editor with track changes, slots, and PDF export",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles": "./dist/styles.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "dependencies": {
+    "@lexical/clipboard": "^0.20.0",
+    "@lexical/code": "^0.20.0",
+    "@lexical/file": "^0.20.0",
+    "@lexical/hashtag": "^0.20.0",
+    "@lexical/headless": "^0.20.0",
+    "@lexical/history": "^0.20.0",
+    "@lexical/html": "^0.20.0",
+    "@lexical/link": "^0.20.0",
+    "@lexical/list": "^0.20.0",
+    "@lexical/mark": "^0.20.0",
+    "@lexical/markdown": "^0.20.0",
+    "@lexical/overflow": "^0.20.0",
+    "@lexical/plain-text": "^0.20.0",
+    "@lexical/react": "^0.20.0",
+    "@lexical/rich-text": "^0.20.0",
+    "@lexical/selection": "^0.20.0",
+    "@lexical/table": "^0.20.0",
+    "@lexical/text": "^0.20.0",
+    "@lexical/utils": "^0.20.0",
+    "docx": "^9.0.2",
+    "lexical": "^0.20.0",
+    "lucide-react": "^0.460.0",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "tsup": "^8.3.5",
+    "typescript": "~5.7.2"
+  },
+  "keywords": [
+    "editor",
+    "wysiwyg",
+    "lexical",
+    "react",
+    "document",
+    "track-changes",
+    "pdf-export"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yassine-techini/certeafiles-editor.git",
+    "directory": "packages/editor"
+  }
+}

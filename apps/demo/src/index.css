@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import editor styles from package */
+@import '../../../packages/editor/src/styles.css';
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* Demo specific styles */
+.demo-code {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}

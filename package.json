@@ -1,26 +1,29 @@
 {
-  "name": "certeafiles-editor",
+  "name": "certeafiles-editor-monorepo",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "Professional WYSIWYG editor for certified documents based on Lexical",
+  "description": "CerteaFiles Editor - Professional WYSIWYG editor monorepo",
   "repository": {
     "type": "git",
     "url": "https://github.com/yassine-techini/certeafiles-editor"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "pnpm --filter @certeafiles/demo dev",
+    "dev:editor": "pnpm --filter @certeafiles/editor dev",
+    "build": "pnpm --filter @certeafiles/editor build && pnpm --filter @certeafiles/demo build",
+    "build:editor": "pnpm --filter @certeafiles/editor build",
+    "build:demo": "pnpm --filter @certeafiles/demo build",
     "lint": "eslint .",
-    "format": "prettier --write src",
+    "format": "prettier --write .",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "pages:build": "pnpm build",
-    "pages:deploy": "wrangler pages deploy dist",
-    "pages:preview": "wrangler pages dev dist"
+    "deploy:dev": "pnpm build:demo && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy apps/demo/dist --project-name=certeafiles-editor-dev --commit-dirty=true",
+    "deploy:staging": "pnpm build:demo && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy apps/demo/dist --project-name=certeafiles-editor-staging --commit-dirty=true",
+    "deploy:prod": "pnpm build:demo && CLOUDFLARE_ACCOUNT_ID=6435a77d3ce17b7de468c6618e7b2b14 wrangler pages deploy apps/demo/dist --project-name=certeafiles-editor-prod --commit-dirty=true"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -82,6 +85,7 @@
     "postcss": "^8.4.49",
     "prettier": "^3.4.2",
     "tailwindcss": "^3.4.17",
+    "tsup": "^8.5.1",
     "typescript": "~5.7.2",
     "typescript-eslint": "^8.18.0",
     "vite": "^6.0.3",
@@ -92,7 +96,10 @@
     "overrides": {
       "lexical": "^0.20.0"
     },
-    "patchedDependencies": {}
+    "patchedDependencies": {},
+    "ignoredBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "engines": {
     "node": ">=18.0.0"
