@@ -94,6 +94,20 @@ export class YjsServer implements DurableObject {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Set roomId from query params for all requests
+    this.roomId = url.searchParams.get('room') || 'default';
+
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        },
+      });
+    }
+
     // Handle WebSocket upgrade
     if (request.headers.get('Upgrade') === 'websocket') {
       return this.handleWebSocket(request);
@@ -106,6 +120,10 @@ export class YjsServer implements DurableObject {
 
     if (path === '/state') {
       return this.handleState();
+    }
+
+    if (path === '/reset' && (request.method === 'POST' || request.method === 'DELETE')) {
+      return this.handleReset();
     }
 
     return new Response('Not Found', { status: 404 });
@@ -423,6 +441,79 @@ export class YjsServer implements DurableObject {
     }), {
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+
+  /**
+   * Handle reset endpoint - clears the room state
+   */
+  private async handleReset(): Promise<Response> {
+    try {
+      console.log(`[YjsServer] Resetting room ${this.roomId}`);
+
+      // Close all connected clients
+      this.clients.forEach((client, ws) => {
+        try {
+          ws.close(CloseCode.NORMAL, 'Room reset');
+        } catch (e) {
+          // Ignore close errors
+        }
+      });
+      this.clients.clear();
+
+      // Clear the document
+      const root = this.doc.get('root', Y.XmlText) as Y.XmlText;
+      this.doc.transact(() => {
+        root.delete(0, root.length);
+      });
+
+      // Delete persisted state
+      await this.state.storage.delete(`doc:${this.roomId}`);
+
+      // Create a fresh document
+      this.doc.destroy();
+      this.doc = new Y.Doc();
+      this.awareness.destroy();
+      this.awareness = new awarenessProtocol.Awareness(this.doc);
+
+      // Re-setup handlers
+      this.awareness.on('update', (
+        { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+        origin: unknown
+      ) => {
+        const changedClients = added.concat(updated, removed);
+        this.broadcastAwareness(changedClients, origin);
+      });
+
+      this.doc.on('update', (update: Uint8Array, origin: unknown) => {
+        this.broadcastUpdate(update, origin);
+        this.schedulePersistence();
+      });
+
+      console.log(`[YjsServer] Room ${this.roomId} has been reset`);
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: `Room ${this.roomId} has been reset`,
+        timestamp: new Date().toISOString(),
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    } catch (error) {
+      console.error('[YjsServer] Error resetting room:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: String(error),
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
   }
 
   /**

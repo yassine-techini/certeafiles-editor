@@ -586,9 +586,8 @@ export function PlaygroundPage() {
   const [zoom, setZoom] = useState(0.65);
   const [showToolbar, setShowToolbar] = useState(true);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
-  // Collaboration is DISABLED - the WebSocket server has corrupted state
-  // TODO: Fix the Yjs server to properly handle initial document state
-  const [enableCollaboration] = useState(false);
+  // Collaboration toggle - now enabled with fresh server state
+  const [enableCollaboration, setEnableCollaboration] = useState(false);
   const [editable, setEditable] = useState(true);
   const [editorKey, setEditorKey] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -995,7 +994,15 @@ export function PlaygroundPage() {
               <span className="text-xs text-slate-600">Comments</span>
             </label>
 
-            {/* Collaboration checkbox removed - feature not ready for production */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableCollaboration}
+                onChange={(e) => setEnableCollaboration(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-xs text-slate-600">Collab</span>
+            </label>
 
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1123,6 +1130,29 @@ export function PlaygroundPage() {
             <span>
               {orientation === 'portrait' ? 'A4 Portrait' : 'A4 Paysage'} • {Math.round(zoom * 100)}%
             </span>
+
+            {/* Collaboration status */}
+            {enableCollaboration && (
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  collaboration.state.status === 'connected' ? 'bg-green-500' :
+                  collaboration.state.status === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                  collaboration.state.status === 'reconnecting' ? 'bg-orange-500 animate-pulse' :
+                  'bg-red-500'
+                }`} />
+                <span>
+                  {collaboration.state.status === 'connected' ? 'Connecté' :
+                   collaboration.state.status === 'connecting' ? 'Connexion...' :
+                   collaboration.state.status === 'reconnecting' ? 'Reconnexion...' :
+                   'Déconnecté'}
+                </span>
+                {collaboration.allUsers.length > 0 && (
+                  <span className="text-slate-400">
+                    ({collaboration.allUsers.length} utilisateur{collaboration.allUsers.length > 1 ? 's' : ''})
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="flex-1" />
             <span className="text-slate-400">
