@@ -260,17 +260,21 @@ export function useCommentAlignment({
     };
   }, [editorContainer, enabled, debouncedRecalculate]);
 
-  // Set up resize observer
+  // Set up resize observer with proper cleanup
   useEffect(() => {
-    if (!editorContainer || !panelContainer || !enabled) return;
+    // Early return if disabled - no observer created
+    if (!enabled) return;
+    if (!editorContainer || !panelContainer) return;
 
     const resizeObserver = new ResizeObserver(() => {
+      // Double-check enabled state inside callback to handle rapid state changes
       debouncedRecalculate();
     });
 
     resizeObserver.observe(editorContainer);
     resizeObserver.observe(panelContainer);
 
+    // Cleanup function - always disconnect observer
     return () => {
       resizeObserver.disconnect();
     };

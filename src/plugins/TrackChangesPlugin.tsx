@@ -255,7 +255,7 @@ export function TrackChangesPlugin({
     if (!enabled || !trackingEnabled || autoSaveInterval <= 0) return;
 
     const intervalId = setInterval(() => {
-      handleSaveVersion('Auto-save');
+      handleSaveVersion(`Sauvegarde auto - ${new Date().toLocaleString('fr-FR')}`);
     }, autoSaveInterval);
 
     return () => clearInterval(intervalId);
@@ -526,16 +526,16 @@ export function TrackChangesPlugin({
   useEffect(() => {
     if (!enabled) return;
 
-    const { viewMode, showDeletions } = useRevisionStore.getState();
-
     const updateViewMode = () => {
+      const { viewMode, showDeletions, documentValidated } = useRevisionStore.getState();
       const editorElement = editor.getRootElement()?.closest('.certeafiles-editor-container');
       if (!editorElement) return;
 
       editorElement.classList.remove(
         'track-changes-final',
         'track-changes-original',
-        'track-changes-hide-deletions'
+        'track-changes-hide-deletions',
+        'document-validated'
       );
 
       if (viewMode === 'no_markup') {
@@ -547,6 +547,11 @@ export function TrackChangesPlugin({
       if (!showDeletions) {
         editorElement.classList.add('track-changes-hide-deletions');
       }
+
+      // Document validated mode - hide deletions, show only insertions
+      if (documentValidated) {
+        editorElement.classList.add('document-validated');
+      }
     };
 
     // Initial application
@@ -554,7 +559,11 @@ export function TrackChangesPlugin({
 
     // Subscribe to store changes
     const unsubscribe = useRevisionStore.subscribe(
-      (state) => ({ viewMode: state.viewMode, showDeletions: state.showDeletions }),
+      (state) => ({
+        viewMode: state.viewMode,
+        showDeletions: state.showDeletions,
+        documentValidated: state.documentValidated
+      }),
       updateViewMode
     );
 

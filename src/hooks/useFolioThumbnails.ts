@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LexicalEditor } from 'lexical';
+import html2canvas from 'html2canvas';
 import { useFolioStore } from '../stores/folioStore';
 import { THUMBNAIL_CONSTANTS } from '../utils/a4-constants';
 import type { FolioOrientation } from '../types/folio';
@@ -34,13 +35,108 @@ export interface UseFolioThumbnailsReturn {
   getThumbnail: (folioId: string) => ThumbnailData | undefined;
   /** Clear all thumbnails */
   clearThumbnails: () => void;
+  /** Whether thumbnails are currently being generated */
+  isLoading: boolean;
+  /** Progress of thumbnail generation (0 to 1) */
+  progress: number;
+  /** Force regenerate all thumbnails from DOM (useful after content is loaded) */
+  regenerateFromDOM: () => void;
 }
 
 /**
- * Generate thumbnail from DOM element
- * Draws content at scaled positions matching the actual page layout
+ * Generate thumbnail from DOM element using html2canvas for accurate capture
+ * This captures the actual visual representation of the page
  */
-function generateThumbnailFromDOM(
+async function generateThumbnailFromDOMAsync(
+  element: HTMLElement,
+  orientation: FolioOrientation
+): Promise<{ dataUrl: string; previewText: string }> {
+  const isPortrait = orientation === 'portrait';
+  const dimensions = isPortrait
+    ? THUMBNAIL_CONSTANTS.PORTRAIT
+    : THUMBNAIL_CONSTANTS.LANDSCAPE;
+
+  // Extract preview text from the element
+  const textElements = Array.from(
+    element.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, span, td, th')
+  ).filter((el) => !el.closest('header') && !el.closest('footer'));
+
+  let previewText = '';
+  textElements.forEach((el) => {
+    const text = el.textContent?.trim() || '';
+    if (text && previewText.length < 200) {
+      previewText += text + ' ';
+    }
+  });
+
+  try {
+    // Use html2canvas to capture the actual visual content
+    const canvas = await html2canvas(element, {
+      scale: 0.2, // Scale down for thumbnail (20% of original)
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: element.scrollWidth,
+      height: element.scrollHeight,
+      windowWidth: element.scrollWidth,
+      windowHeight: element.scrollHeight,
+    });
+
+    // Create final thumbnail canvas with correct dimensions
+    const thumbnailCanvas = document.createElement('canvas');
+    thumbnailCanvas.width = dimensions.WIDTH;
+    thumbnailCanvas.height = dimensions.HEIGHT;
+    const ctx = thumbnailCanvas.getContext('2d');
+
+    if (!ctx) {
+      return { dataUrl: '', previewText: previewText.slice(0, 200).trim() };
+    }
+
+    // White background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, thumbnailCanvas.width, thumbnailCanvas.height);
+
+    // Calculate scaling to fit while maintaining aspect ratio
+    const scaleX = dimensions.WIDTH / canvas.width;
+    const scaleY = dimensions.HEIGHT / canvas.height;
+    const scale = Math.min(scaleX, scaleY);
+
+    const scaledWidth = canvas.width * scale;
+    const scaledHeight = canvas.height * scale;
+    const offsetX = (dimensions.WIDTH - scaledWidth) / 2;
+    const offsetY = (dimensions.HEIGHT - scaledHeight) / 2;
+
+    // Draw the captured content scaled to fit
+    ctx.drawImage(
+      canvas,
+      0, 0, canvas.width, canvas.height,
+      offsetX, offsetY, scaledWidth, scaledHeight
+    );
+
+    // Add subtle border
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(offsetX + 0.5, offsetY + 0.5, scaledWidth - 1, scaledHeight - 1);
+
+    return {
+      dataUrl: thumbnailCanvas.toDataURL('image/png', 0.8),
+      previewText: previewText.slice(0, 200).trim(),
+    };
+  } catch (error) {
+    console.warn('[Thumbnail] html2canvas failed, using fallback:', error);
+    // Return fallback with just preview text
+    return {
+      dataUrl: '',
+      previewText: previewText.slice(0, 200).trim(),
+    };
+  }
+}
+
+/**
+ * Synchronous fallback for thumbnail generation (simpler drawing)
+ */
+function generateThumbnailFromDOMSync(
   element: HTMLElement,
   orientation: FolioOrientation
 ): { dataUrl: string; previewText: string } {
@@ -61,8 +157,8 @@ function generateThumbnailFromDOM(
 
   // Get the actual dimensions of the folio element
   const rect = element.getBoundingClientRect();
-  const sourceWidth = rect.width;
-  const sourceHeight = rect.height;
+  const sourceWidth = rect.width || 794;
+  const sourceHeight = rect.height || 1123;
 
   // Calculate scale to fit thumbnail
   const scale = Math.min(
@@ -85,150 +181,46 @@ function generateThumbnailFromDOM(
   ctx.lineWidth = 1;
   ctx.strokeRect(offsetX + 0.5, offsetY + 0.5, scaledWidth - 1, scaledHeight - 1);
 
-  // Draw header if present
-  const header = element.querySelector('header');
-  if (header) {
-    const headerRect = header.getBoundingClientRect();
-    const headerTop = (headerRect.top - rect.top) * scale + offsetY;
-    const headerHeight = headerRect.height * scale;
-
-    ctx.fillStyle = '#f9fafb';
-    ctx.fillRect(offsetX + 1, headerTop, scaledWidth - 2, headerHeight);
-
-    // Draw header border
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(offsetX + 1, headerTop + headerHeight);
-    ctx.lineTo(offsetX + scaledWidth - 1, headerTop + headerHeight);
-    ctx.stroke();
-
-    // Draw header text
-    const headerText = header.textContent?.trim() || '';
-    if (headerText) {
-      ctx.fillStyle = '#9ca3af';
-      ctx.font = `${Math.max(3, 4 * scale)}px sans-serif`;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(
-        headerText.slice(0, 50),
-        offsetX + 3,
-        headerTop + headerHeight / 2,
-        scaledWidth - 6
-      );
-    }
-  }
-
-  // Draw footer if present
-  const footer = element.querySelector('footer');
-  if (footer) {
-    const footerRect = footer.getBoundingClientRect();
-    const footerTop = (footerRect.top - rect.top) * scale + offsetY;
-    const footerHeight = footerRect.height * scale;
-
-    ctx.fillStyle = '#f9fafb';
-    ctx.fillRect(offsetX + 1, footerTop, scaledWidth - 2, footerHeight);
-
-    // Draw footer border
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(offsetX + 1, footerTop);
-    ctx.lineTo(offsetX + scaledWidth - 1, footerTop);
-    ctx.stroke();
-
-    // Draw footer text
-    const footerText = footer.textContent?.trim() || '';
-    if (footerText) {
-      ctx.fillStyle = '#9ca3af';
-      ctx.font = `${Math.max(3, 4 * scale)}px sans-serif`;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(
-        footerText.slice(0, 50),
-        offsetX + 3,
-        footerTop + footerHeight / 2,
-        scaledWidth - 6
-      );
-    }
-  }
-
-  // Get all text elements excluding header and footer
+  // Extract and draw text content
   const textElements = Array.from(
-    element.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, span, td, th')
-  ).filter((el) => {
-    return !el.closest('header') && !el.closest('footer');
-  });
+    element.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li')
+  ).filter((el) => !el.closest('header') && !el.closest('footer'));
 
-  // Draw each text element at its scaled position
   let previewText = '';
+  let currentY = offsetY + 10;
+  const lineHeight = 6;
+  const maxLines = Math.floor((scaledHeight - 20) / lineHeight);
+  let lineCount = 0;
+
+  ctx.fillStyle = '#374151';
+  ctx.font = '4px sans-serif';
+  ctx.textBaseline = 'top';
 
   textElements.forEach((el) => {
-    const elRect = el.getBoundingClientRect();
-
-    // Skip elements outside the visible area
-    if (elRect.width === 0 || elRect.height === 0) return;
-
-    // Calculate scaled position relative to the folio
-    const elTop = (elRect.top - rect.top) * scale + offsetY;
-    const elLeft = (elRect.left - rect.left) * scale + offsetX;
-    const elWidth = elRect.width * scale;
-    const elHeight = elRect.height * scale;
-
-    // Skip if outside canvas bounds
-    if (elTop < offsetY || elTop > offsetY + scaledHeight) return;
-    if (elLeft < offsetX || elLeft > offsetX + scaledWidth) return;
+    if (lineCount >= maxLines) return;
 
     const text = el.textContent?.trim() || '';
     if (!text) return;
 
-    // Collect preview text
     if (previewText.length < 200) {
       previewText += text + ' ';
     }
 
+    // Draw simplified text representation
     const tagName = el.tagName.toLowerCase();
-    const computed = window.getComputedStyle(el);
-
-    // Calculate font size - scale it proportionally
-    let fontSize = parseFloat(computed.fontSize) * scale;
-    fontSize = Math.max(2, Math.min(fontSize, 8)); // Clamp between 2 and 8px
-
-    // Style based on element type
     if (tagName.startsWith('h')) {
-      ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.fillStyle = '#111827';
+      ctx.font = 'bold 5px sans-serif';
     } else {
-      ctx.font = `${fontSize}px sans-serif`;
-      ctx.fillStyle = computed.color || '#374151';
+      ctx.fillStyle = '#374151';
+      ctx.font = '4px sans-serif';
     }
 
-    ctx.textBaseline = 'top';
-
-    // Draw the text with word wrapping
-    const words = text.split(/\s+/);
-    let line = '';
-    let currentY = elTop;
-    const lineHeight = fontSize * 1.3;
-    const maxWidth = elWidth - 2;
-    const maxY = elTop + elHeight;
-
-    for (const word of words) {
-      if (currentY > maxY) break;
-
-      const testLine = line ? `${line} ${word}` : word;
-      const metrics = ctx.measureText(testLine);
-
-      if (metrics.width > maxWidth && line) {
-        ctx.fillText(line, elLeft + 1, currentY, maxWidth);
-        line = word;
-        currentY += lineHeight;
-      } else {
-        line = testLine;
-      }
-    }
-
-    if (line && currentY <= maxY) {
-      ctx.fillText(line, elLeft + 1, currentY, maxWidth);
-    }
+    // Draw a line of text (truncated)
+    const maxWidth = scaledWidth - 20;
+    ctx.fillText(text.slice(0, 80), offsetX + 10, currentY, maxWidth);
+    currentY += lineHeight;
+    lineCount++;
   });
 
   return {
@@ -274,14 +266,16 @@ export function useFolioThumbnails(
   const [thumbnails, setThumbnails] = useState<Map<string, ThumbnailData>>(
     new Map()
   );
+  const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get folios from store
   const folios = useFolioStore((state) => state.getFoliosInOrder());
 
-  // Generate thumbnail for a single folio by capturing the DOM element
+  // Generate thumbnail for a single folio by capturing the DOM element (async with html2canvas)
   const generateThumbnail = useCallback(
-    (folioId: string, _editor: LexicalEditor) => {
+    async (folioId: string, _editor: LexicalEditor) => {
       const folio = folios.find((f) => f.id === folioId);
       if (!folio) return;
 
@@ -307,7 +301,8 @@ export function useFolioThumbnails(
 
       if (folioElement) {
         try {
-          const result = generateThumbnailFromDOM(folioElement, folio.orientation);
+          // Use async html2canvas for accurate visual capture
+          const result = await generateThumbnailFromDOMAsync(folioElement, folio.orientation);
           setThumbnails((prev) => {
             const next = new Map(prev);
             next.set(folioId, {
@@ -320,18 +315,33 @@ export function useFolioThumbnails(
           });
         } catch (error) {
           console.warn('[Thumbnail] Error generating thumbnail:', error);
-          // Use empty thumbnail on error
-          const canvas = generateEmptyThumbnail(folio.orientation);
-          setThumbnails((prev) => {
-            const next = new Map(prev);
-            next.set(folioId, {
-              folioId,
-              dataUrl: canvas.toDataURL('image/png'),
-              previewText: '',
-              timestamp: Date.now(),
+          // Fallback to sync method on error
+          try {
+            const result = generateThumbnailFromDOMSync(folioElement, folio.orientation);
+            setThumbnails((prev) => {
+              const next = new Map(prev);
+              next.set(folioId, {
+                folioId,
+                dataUrl: result.dataUrl,
+                previewText: result.previewText,
+                timestamp: Date.now(),
+              });
+              return next;
             });
-            return next;
-          });
+          } catch {
+            // Use empty thumbnail on complete failure
+            const canvas = generateEmptyThumbnail(folio.orientation);
+            setThumbnails((prev) => {
+              const next = new Map(prev);
+              next.set(folioId, {
+                folioId,
+                dataUrl: canvas.toDataURL('image/png'),
+                previewText: '',
+                timestamp: Date.now(),
+              });
+              return next;
+            });
+          }
         }
       } else {
         // Fallback to empty thumbnail
@@ -351,12 +361,40 @@ export function useFolioThumbnails(
     [folios]
   );
 
-  // Generate thumbnails for all folios
+  // Generate thumbnails for all folios with progress tracking
   const generateAllThumbnails = useCallback(
     (editor: LexicalEditor) => {
-      folios.forEach((folio) => {
-        generateThumbnail(folio.id, editor);
-      });
+      if (folios.length === 0) return;
+
+      setIsLoading(true);
+      setProgress(0);
+
+      // Process thumbnails in batches to avoid blocking the UI
+      const batchSize = 10;
+      let processed = 0;
+
+      const processBatch = (startIndex: number) => {
+        const endIndex = Math.min(startIndex + batchSize, folios.length);
+
+        for (let i = startIndex; i < endIndex; i++) {
+          generateThumbnail(folios[i].id, editor);
+          processed++;
+        }
+
+        setProgress(processed / folios.length);
+
+        if (endIndex < folios.length) {
+          // Schedule next batch
+          requestAnimationFrame(() => processBatch(endIndex));
+        } else {
+          // All done
+          setIsLoading(false);
+          setProgress(1);
+        }
+      };
+
+      // Start processing
+      requestAnimationFrame(() => processBatch(0));
     },
     [folios, generateThumbnail]
   );
@@ -374,6 +412,93 @@ export function useFolioThumbnails(
     setThumbnails(new Map());
   }, []);
 
+  // Regenerate all thumbnails from DOM (call this after content is loaded) - async with html2canvas
+  const regenerateFromDOM = useCallback(async () => {
+    if (folios.length === 0) return;
+
+    console.log('[Thumbnail] regenerateFromDOM called, capturing thumbnails for', folios.length, 'folios');
+    setIsLoading(true);
+    setProgress(0);
+
+    const newThumbnails = new Map<string, ThumbnailData>();
+    let capturedCount = 0;
+
+    // Process folios sequentially to avoid overwhelming html2canvas
+    for (let i = 0; i < folios.length; i++) {
+      const folio = folios[i];
+
+      // If folio has PDF image, use it
+      if (folio.metadata?.pdfPageImage) {
+        newThumbnails.set(folio.id, {
+          folioId: folio.id,
+          dataUrl: folio.metadata.pdfPageImage as string,
+          previewText: (folio.metadata.pdfTextContent as string)?.slice(0, 200) || 'PDF Page',
+          timestamp: Date.now(),
+        });
+        capturedCount++;
+        setProgress((i + 1) / folios.length);
+        continue;
+      }
+
+      // Try to capture from DOM with html2canvas
+      const folioElement = document.querySelector(
+        `[data-folio-id="${folio.id}"]`
+      ) as HTMLElement;
+
+      if (folioElement) {
+        try {
+          // Use async html2canvas for accurate visual capture
+          const result = await generateThumbnailFromDOMAsync(folioElement, folio.orientation);
+          newThumbnails.set(folio.id, {
+            folioId: folio.id,
+            dataUrl: result.dataUrl,
+            previewText: result.previewText || `Page ${folio.index + 1}`,
+            timestamp: Date.now(),
+          });
+          if (result.previewText) {
+            capturedCount++;
+          }
+        } catch (error) {
+          console.warn('[Thumbnail] Error generating thumbnail for', folio.id, error);
+          // Fallback to sync method
+          try {
+            const result = generateThumbnailFromDOMSync(folioElement, folio.orientation);
+            newThumbnails.set(folio.id, {
+              folioId: folio.id,
+              dataUrl: result.dataUrl,
+              previewText: result.previewText || `Page ${folio.index + 1}`,
+              timestamp: Date.now(),
+            });
+          } catch {
+            const canvas = generateEmptyThumbnail(folio.orientation);
+            newThumbnails.set(folio.id, {
+              folioId: folio.id,
+              dataUrl: canvas.toDataURL('image/png'),
+              previewText: `Page ${folio.index + 1}`,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      } else {
+        // DOM element not found - create placeholder
+        const canvas = generateEmptyThumbnail(folio.orientation);
+        newThumbnails.set(folio.id, {
+          folioId: folio.id,
+          dataUrl: canvas.toDataURL('image/png'),
+          previewText: `Page ${folio.index + 1}`,
+          timestamp: Date.now(),
+        });
+      }
+
+      setProgress((i + 1) / folios.length);
+    }
+
+    setThumbnails(newThumbnails);
+    setIsLoading(false);
+    setProgress(1);
+    console.log(`[Thumbnail] regenerateFromDOM completed: ${capturedCount}/${folios.length} thumbnails captured`);
+  }, [folios]);
+
   // Cleanup debounce timer on unmount
   useEffect(() => {
     return () => {
@@ -383,59 +508,164 @@ export function useFolioThumbnails(
     };
   }, []);
 
-  // Generate initial thumbnails when folios change
+  // Generate thumbnails from DOM when folios change - async with html2canvas
   useEffect(() => {
-    // Create thumbnails for new folios
-    folios.forEach((folio) => {
-      const existingThumbnail = thumbnails.get(folio.id);
-      const hasPdfImage = folio.metadata?.pdfPageImage;
+    if (folios.length === 0) return;
 
-      // If folio has PDF image, always use it (even if we have an empty placeholder)
-      if (hasPdfImage) {
-        const pdfImage = folio.metadata.pdfPageImage as string;
-        const pdfText = (folio.metadata.pdfTextContent as string)?.slice(0, 200) || '';
+    let cancelled = false;
+    let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-        // Only update if we don't have a thumbnail or if current thumbnail is empty/different
-        if (!existingThumbnail || !existingThumbnail.dataUrl?.includes('data:image/png')) {
-          setThumbnails((prev) => {
-            const next = new Map(prev);
-            next.set(folio.id, {
-              folioId: folio.id,
-              dataUrl: pdfImage,
-              previewText: pdfText,
-              timestamp: Date.now(),
-            });
-            return next;
-          });
+    /**
+     * Wait for DOM elements to be present before capturing thumbnails
+     * This is crucial because the folios are synced to the store before the DOM is rendered
+     */
+    const waitForDOMAndCapture = (attempt = 1, maxAttempts = 10) => {
+      if (cancelled) return;
+
+      // Check how many folio elements are in the DOM
+      const folioElements = document.querySelectorAll('[data-folio-id]');
+      const domFolioCount = folioElements.length;
+
+      console.log(`[Thumbnail] Attempt ${attempt}: DOM has ${domFolioCount}/${folios.length} folio elements`);
+
+      // If we have at least some DOM elements or we've tried enough times, start capturing
+      if (domFolioCount > 0 || attempt >= maxAttempts) {
+        void startThumbnailCapture();
+      } else {
+        // Wait longer and retry - exponential backoff
+        const delay = Math.min(100 * Math.pow(1.5, attempt - 1), 1000);
+        console.log(`[Thumbnail] DOM not ready, retrying in ${delay}ms...`);
+        retryTimeoutId = setTimeout(() => waitForDOMAndCapture(attempt + 1, maxAttempts), delay);
+      }
+    };
+
+    const startThumbnailCapture = async () => {
+      if (cancelled) return;
+
+      setIsLoading(true);
+      setProgress(0);
+
+      const newThumbnails = new Map<string, ThumbnailData>();
+      let capturedCount = 0;
+
+      // Process folios sequentially for async html2canvas
+      for (let i = 0; i < folios.length; i++) {
+        if (cancelled) break;
+
+        const folio = folios[i];
+        const existingThumbnail = thumbnails.get(folio.id);
+
+        // Skip if we already have a valid thumbnail with actual content
+        if (existingThumbnail && existingThumbnail.previewText && !existingThumbnail.previewText.startsWith('Page ')) {
+          newThumbnails.set(folio.id, existingThumbnail);
+          capturedCount++;
+          setProgress((i + 1) / folios.length);
+          continue;
         }
-      } else if (!existingThumbnail) {
-        // No PDF image and no thumbnail - create empty placeholder
-        const canvas = generateEmptyThumbnail(folio.orientation);
-        setThumbnails((prev) => {
-          const next = new Map(prev);
-          next.set(folio.id, {
+
+        // If folio has PDF image, use it
+        if (folio.metadata?.pdfPageImage) {
+          newThumbnails.set(folio.id, {
             folioId: folio.id,
-            dataUrl: canvas.toDataURL('image/png'),
-            previewText: '',
+            dataUrl: folio.metadata.pdfPageImage as string,
+            previewText: (folio.metadata.pdfTextContent as string)?.slice(0, 200) || 'PDF Page',
             timestamp: Date.now(),
           });
-          return next;
-        });
-      }
-    });
+          capturedCount++;
+          setProgress((i + 1) / folios.length);
+          continue;
+        }
 
-    // Remove thumbnails for deleted folios
+        // Try to capture from DOM with html2canvas
+        const folioElement = document.querySelector(
+          `[data-folio-id="${folio.id}"]`
+        ) as HTMLElement;
+
+        if (folioElement) {
+          try {
+            // Use async html2canvas for accurate visual capture
+            const result = await generateThumbnailFromDOMAsync(folioElement, folio.orientation);
+            newThumbnails.set(folio.id, {
+              folioId: folio.id,
+              dataUrl: result.dataUrl,
+              previewText: result.previewText || `Page ${folio.index + 1}`,
+              timestamp: Date.now(),
+            });
+            if (result.previewText) {
+              capturedCount++;
+            }
+          } catch (error) {
+            console.warn('[Thumbnail] Error generating thumbnail for', folio.id, error);
+            // Fallback to sync method
+            try {
+              const result = generateThumbnailFromDOMSync(folioElement, folio.orientation);
+              newThumbnails.set(folio.id, {
+                folioId: folio.id,
+                dataUrl: result.dataUrl,
+                previewText: result.previewText || `Page ${folio.index + 1}`,
+                timestamp: Date.now(),
+              });
+            } catch {
+              // Create placeholder with page number
+              const canvas = generateEmptyThumbnail(folio.orientation);
+              newThumbnails.set(folio.id, {
+                folioId: folio.id,
+                dataUrl: canvas.toDataURL('image/png'),
+                previewText: `Page ${folio.index + 1}`,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        } else {
+          // DOM element not found - create placeholder
+          const canvas = generateEmptyThumbnail(folio.orientation);
+          newThumbnails.set(folio.id, {
+            folioId: folio.id,
+            dataUrl: canvas.toDataURL('image/png'),
+            previewText: `Page ${folio.index + 1}`,
+            timestamp: Date.now(),
+          });
+        }
+
+        setProgress((i + 1) / folios.length);
+      }
+
+      if (!cancelled) {
+        // All done - update thumbnails state
+        setThumbnails(newThumbnails);
+        setIsLoading(false);
+        setProgress(1);
+        console.log(`[Thumbnail] Completed: ${capturedCount}/${folios.length} thumbnails captured from DOM`);
+      }
+    };
+
+    // Start waiting for DOM with initial delay for React render
+    const initialDelay = setTimeout(() => waitForDOMAndCapture(1), 100);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(initialDelay);
+      if (retryTimeoutId) {
+        clearTimeout(retryTimeoutId);
+      }
+    };
+  }, [folios.length]); // Only re-run when folio count changes
+
+  // Remove thumbnails for deleted folios
+  useEffect(() => {
     const folioIds = new Set(folios.map((f) => f.id));
     setThumbnails((prev) => {
+      let hasChanges = false;
       const next = new Map(prev);
       for (const key of next.keys()) {
         if (!folioIds.has(key)) {
           next.delete(key);
+          hasChanges = true;
         }
       }
-      return next;
+      return hasChanges ? next : prev;
     });
-  }, [folios, thumbnails]);
+  }, [folios]);
 
   return {
     thumbnails,
@@ -443,6 +673,9 @@ export function useFolioThumbnails(
     generateAllThumbnails,
     getThumbnail,
     clearThumbnails,
+    isLoading,
+    progress,
+    regenerateFromDOM,
   };
 }
 

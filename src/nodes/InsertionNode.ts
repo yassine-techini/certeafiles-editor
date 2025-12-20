@@ -53,7 +53,17 @@ function $convertInsertionElement(domNode: Node): DOMConversionOutput | null {
   if (domNode instanceof HTMLElement && domNode.hasAttribute('data-revision-id')) {
     const revisionId = domNode.getAttribute('data-revision-id') || '';
     const authorStr = domNode.getAttribute('data-revision-author');
-    const author: RevisionAuthor = authorStr ? JSON.parse(authorStr) : { id: 'unknown', name: 'Unknown' };
+
+    // Safely parse author with error handling
+    let author: RevisionAuthor = { id: 'unknown', name: 'Unknown' };
+    if (authorStr) {
+      try {
+        author = JSON.parse(authorStr);
+      } catch {
+        // Invalid JSON, use default author
+      }
+    }
+
     const timestamp = parseInt(domNode.getAttribute('data-revision-timestamp') || '0', 10);
     const text = domNode.textContent || '';
 

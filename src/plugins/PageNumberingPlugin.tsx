@@ -7,6 +7,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { $getRoot } from 'lexical';
 import { $getAllFolioNodes } from '../nodes/FolioNode';
 import { useFolioStore } from '../stores/folioStore';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 /**
  * Section numbering configuration
@@ -85,6 +86,9 @@ export function PageNumberingPlugin({
    * Update all page number nodes in the document
    */
   const updateAllPageNumbers = useCallback(() => {
+    // Skip if a modal is open
+    if (isModalCurrentlyOpen()) return;
+
     const now = Date.now();
     if (now - lastUpdateRef.current < 50) {
       // Prevent too frequent updates

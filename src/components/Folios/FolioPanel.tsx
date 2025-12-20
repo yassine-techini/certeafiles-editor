@@ -37,6 +37,10 @@ export interface FolioPanelProps {
   onZoomChange?: (zoom: number) => void;
   /** Download handler */
   onDownload?: () => void;
+  /** Whether thumbnails are loading */
+  isLoadingThumbnails?: boolean;
+  /** Thumbnail loading progress (0 to 1) */
+  thumbnailProgress?: number;
 }
 
 /**
@@ -151,6 +155,8 @@ export const FolioPanel = memo(function FolioPanel({
   zoom = 1,
   onZoomChange,
   onDownload,
+  isLoadingThumbnails = false,
+  thumbnailProgress = 0,
 }: FolioPanelProps) {
   const listContainerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(400);
@@ -307,6 +313,27 @@ export const FolioPanel = memo(function FolioPanel({
       className="flex flex-col h-full"
       style={{ width }}
     >
+      {/* Loading overlay */}
+      {isLoadingThumbnails && (
+        <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Loader2 size={14} className="text-blue-500 animate-spin" />
+            <span className="text-xs font-medium text-blue-700">
+              Génération des aperçus...
+            </span>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-1.5">
+            <div
+              className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+              style={{ width: `${Math.round(thumbnailProgress * 100)}%` }}
+            />
+          </div>
+          <div className="text-[10px] text-blue-600 mt-1 text-center">
+            {Math.round(thumbnailProgress * 100)}% ({Math.round(thumbnailProgress * folios.length)}/{folios.length} pages)
+          </div>
+        </div>
+      )}
+
       {/* Folio list with blue scrollbar */}
       <div ref={listContainerRef} className="flex-1 overflow-y-auto p-3 left-panel-scroll">
         {showSections && sections.length > 0 && (

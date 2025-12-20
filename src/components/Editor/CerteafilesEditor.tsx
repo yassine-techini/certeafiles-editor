@@ -2,7 +2,7 @@
  * CerteafilesEditor - Main WYSIWYG Editor Component
  * Per Constitution Section 2.4
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
@@ -25,6 +25,7 @@ import { TablePlugin } from '../../plugins/TablePlugin';
 import { FloatingToolbarPlugin } from '../../plugins/FloatingToolbarPlugin';
 import { FolioPlugin } from '../../plugins/FolioPlugin';
 import { FolioScrollSyncPlugin } from '../../plugins/FolioScrollSyncPlugin';
+import { AutoPaginationPlugin } from '../../plugins/AutoPaginationPlugin';
 import { HeaderFooterPlugin } from '../../plugins/HeaderFooterPlugin';
 import { PageNumberingPlugin } from '../../plugins/PageNumberingPlugin';
 import { SlotPlugin } from '../../plugins/SlotPlugin';
@@ -38,16 +39,21 @@ import { PlusMenuPlugin } from '../../plugins/PlusMenuPlugin';
 import { TrackChangesPlugin } from '../../plugins/TrackChangesPlugin';
 import { PDFBackgroundPlugin } from '../../plugins/PDFBackgroundPlugin';
 import { CollaborationPlugin } from '../../plugins/CollaborationPlugin';
-import { SpellCheckPlugin } from '../../plugins/SpellCheckPlugin';
+import { SpellCheckPlugin, SpellCheckMenu } from '../../plugins/SpellCheckPlugin';
 import { SpecialTablePlugin } from '../../plugins/SpecialTablePlugin';
 import { FootnotePlugin } from '../../plugins/FootnotePlugin';
 import { SymbolPickerPlugin } from '../../plugins/SymbolPickerPlugin';
 import { ExportPlugin } from '../../plugins/ExportPlugin';
 import { QueryBuilderPlugin } from '../../plugins/QueryBuilderPlugin';
+import { InitialContentPlugin } from '../../plugins/InitialContentPlugin';
+import { VersionHistoryPlugin } from '../../plugins/VersionHistoryPlugin';
+import { KeyboardShortcutsPlugin } from '../../plugins/KeyboardShortcutsPlugin';
+import { HeaderFooterEditorModal } from '../HeaderFooter';
 import type { CollaborationUser, ConnectionStatus, CollaborationState } from '../../types/collaboration';
 import { createEditorConfig } from '../../config';
 import { A4_CONSTANTS } from '../../utils/a4-constants';
 import type { Orientation } from '../../utils/a4-constants';
+import { useFolioStore } from '../../stores/folioStore';
 
 /**
  * Props for CerteafilesEditor
@@ -55,6 +61,10 @@ import type { Orientation } from '../../utils/a4-constants';
 export interface CerteafilesEditorProps {
   /** Initial editor state as JSON string */
   initialState?: string;
+  /** Initial text content to load (plain text) */
+  initialTextContent?: string;
+  /** Callback when initial content is loaded */
+  onContentLoaded?: () => void;
   /** Whether the editor is editable */
   editable?: boolean;
   /** Page orientation */
@@ -78,6 +88,8 @@ export interface CerteafilesEditorProps {
   className?: string;
   /** Whether to show the toolbar */
   showToolbar?: boolean;
+  /** Whether to show the status bar at bottom */
+  showStatusBar?: boolean;
   /** Whether to show the comment panel */
   showCommentPanel?: boolean;
   /** Whether to show the revision panel */
@@ -113,8 +125,11 @@ function EditorInner({
   zoom,
   margins,
   placeholder,
+  initialTextContent,
+  onContentLoaded,
   onChange,
   showToolbar,
+  showStatusBar,
   showCommentPanel,
   showRevisionPanel,
   onToggleRevisionPanel,
@@ -131,8 +146,11 @@ function EditorInner({
   zoom: number;
   margins: { top?: number; right?: number; bottom?: number; left?: number } | undefined;
   placeholder: string;
+  initialTextContent: string | undefined;
+  onContentLoaded: (() => void) | undefined;
   onChange: ((editorState: EditorState, editor: LexicalEditor) => void) | undefined;
   showToolbar: boolean;
+  showStatusBar: boolean;
   showCommentPanel: boolean;
   showRevisionPanel: boolean;
   onToggleRevisionPanel: (() => void) | undefined;
@@ -150,11 +168,46 @@ function EditorInner({
   // Comment panel state
   const [isCommentPanelOpen, setIsCommentPanelOpen] = useState(showCommentPanel);
 
+  // Header/Footer editor modal state
+  const [isHeaderFooterEditorOpen, setIsHeaderFooterEditorOpen] = useState(false);
+
+  // Collaboration state for status bar
+  const [collaborationStatus, setCollaborationStatus] = useState<ConnectionStatus>('disconnected');
+  const [collaborationUsers, setCollaborationUsers] = useState<CollaborationUser[]>([]);
+  const [isSynced, setIsSynced] = useState(false);
+
+  // Handle collaboration callbacks
+  const handleCollaborationStatusChange = useCallback((status: ConnectionStatus) => {
+    setCollaborationStatus(status);
+    onCollaborationStatusChange?.(status);
+  }, [onCollaborationStatusChange]);
+
+  const handleCollaborationUsersChange = useCallback((users: CollaborationUser[]) => {
+    setCollaborationUsers(users);
+    onCollaborationUsersChange?.(users);
+  }, [onCollaborationUsersChange]);
+
+  const handleCollaborationStateChange = useCallback((state: CollaborationState) => {
+    setCollaborationStatus(state.status);
+    setCollaborationUsers(state.users);
+    setIsSynced(state.isSynced);
+    onCollaborationStateChange?.(state);
+  }, [onCollaborationStateChange]);
+
   // Force recalculation trigger for comment alignment
   const [, setAlignmentTrigger] = useState(0);
   const triggerAlignmentRecalc = useCallback(() => {
     setAlignmentTrigger((n) => n + 1);
   }, []);
+
+  // Sync orientation prop with active folio in store
+  useEffect(() => {
+    const { activeFolioId, updateFolio } = useFolioStore.getState();
+    if (activeFolioId) {
+      updateFolio(activeFolioId, { orientation });
+      console.log('[CerteafilesEditor] Syncing orientation to folio store:', activeFolioId, orientation);
+    }
+  }, [orientation]);
 
   // Handle editor changes
   const handleChange = useCallback(
@@ -187,7 +240,13 @@ function EditorInner({
         // Add a brief highlight effect
         commentElement.classList.add('comment-highlight-pulse');
         setTimeout(() => {
-          commentElement.classList.remove('comment-highlight-pulse');
+          // Re-query the element in case it was removed/replaced during the timeout
+          const element = document.querySelector(
+            `[data-comment-thread-id="${threadId}"]`
+          );
+          if (element) {
+            element.classList.remove('comment-highlight-pulse');
+          }
         }, 2000);
       }
     },
@@ -196,6 +255,24 @@ function EditorInner({
 
   // Calculate page width based on orientation
   const pageWidth = orientation === 'landscape' ? 1123 : 794;
+
+  // Get status info for display
+  const getStatusInfo = () => {
+    switch (collaborationStatus) {
+      case 'connected':
+        return { color: 'bg-green-500', label: 'Connecté', icon: '●' };
+      case 'connecting':
+        return { color: 'bg-yellow-500 animate-pulse', label: 'Connexion...', icon: '○' };
+      case 'reconnecting':
+        return { color: 'bg-orange-500 animate-pulse', label: 'Reconnexion...', icon: '○' };
+      case 'error':
+        return { color: 'bg-red-500', label: 'Erreur', icon: '✕' };
+      default:
+        return { color: 'bg-gray-400', label: 'Déconnecté', icon: '○' };
+    }
+  };
+
+  const statusInfo = getStatusInfo();
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -215,7 +292,9 @@ function EditorInner({
                 }}
               >
                 <div className="bg-white rounded-xl shadow-lg border border-slate-200/60">
-                  <EditorToolbar />
+                  <EditorToolbar
+                    onEditHeaderFooter={() => setIsHeaderFooterEditorOpen(true)}
+                  />
                 </div>
               </div>
             )}
@@ -255,6 +334,53 @@ function EditorInner({
 
       </div>
 
+      {/* Status Bar at bottom - only if enabled */}
+      {showStatusBar && (
+        <div className="h-8 bg-white border-t border-gray-200 flex items-center justify-between px-4 text-xs">
+          {/* Left side - Spell check */}
+          <div className="flex items-center gap-2">
+            <SpellCheckMenu />
+          </div>
+
+          {/* Right side - Collaboration status */}
+          {enableCollaboration && (
+            <div className="flex items-center gap-3">
+              {/* Connected users avatars */}
+              {collaborationUsers.length > 0 && (
+                <div className="flex items-center -space-x-2">
+                  {collaborationUsers.slice(0, 4).map((user) => (
+                    <div
+                      key={user.id}
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-medium border-2 border-white"
+                      style={{ backgroundColor: user.color }}
+                      title={user.name}
+                    >
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                  ))}
+                  {collaborationUsers.length > 4 && (
+                    <div className="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs font-medium border-2 border-white">
+                      +{collaborationUsers.length - 4}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Connection status */}
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${statusInfo.color}`} />
+                <span className="text-gray-600">{statusInfo.label}</span>
+                {collaborationStatus === 'connected' && (
+                  <span className="text-gray-400">
+                    {isSynced ? '(sync)' : '(...)'}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* A4 Layout Plugin */}
       <A4LayoutPlugin
         orientation={orientation}
@@ -281,6 +407,9 @@ function EditorInner({
 
       {/* Folio Scroll Sync Plugin for two-way synchronization */}
       <FolioScrollSyncPlugin enabled={true} debounceMs={150} />
+
+      {/* Auto Pagination Plugin for automatic page breaks */}
+      <AutoPaginationPlugin enabled={true} debounceMs={500} />
 
       {/* Header/Footer Plugin for page headers and footers */}
       <HeaderFooterPlugin autoInject={true} syncWithStore={true} />
@@ -337,6 +466,12 @@ function EditorInner({
       {/* Query Builder Plugin for visual SQL query building */}
       <QueryBuilderPlugin enabled={true} />
 
+      {/* Version History Plugin for document versioning */}
+      <VersionHistoryPlugin enabled={true} autoSaveIntervalMinutes={5} />
+
+      {/* Keyboard Shortcuts Plugin for shortcut management */}
+      <KeyboardShortcutsPlugin enabled={true} />
+
       {/* PDF Background Plugin for imported PDF pages */}
       <PDFBackgroundPlugin />
 
@@ -346,9 +481,17 @@ function EditorInner({
           roomId={collaborationRoomId}
           user={collaborationUser}
           enabled={enableCollaboration}
-          onStatusChange={onCollaborationStatusChange}
-          onUsersChange={onCollaborationUsersChange}
-          onStateChange={onCollaborationStateChange}
+          onStatusChange={handleCollaborationStatusChange}
+          onUsersChange={handleCollaborationUsersChange}
+          onStateChange={handleCollaborationStateChange}
+        />
+      )}
+
+      {/* Initial Content Plugin - loads text content on mount */}
+      {initialTextContent && (
+        <InitialContentPlugin
+          content={initialTextContent}
+          onContentLoaded={onContentLoaded}
         />
       )}
 
@@ -356,6 +499,12 @@ function EditorInner({
       {onChange && (
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
       )}
+
+      {/* Header/Footer Editor Modal */}
+      <HeaderFooterEditorModal
+        isOpen={isHeaderFooterEditorOpen}
+        onClose={() => setIsHeaderFooterEditorOpen(false)}
+      />
     </div>
   );
 }
@@ -365,6 +514,8 @@ function EditorInner({
  */
 export function CerteafilesEditor({
   initialState,
+  initialTextContent,
+  onContentLoaded,
   editable = true,
   orientation = 'portrait',
   zoom = A4_CONSTANTS.ZOOM_DEFAULT,
@@ -373,6 +524,7 @@ export function CerteafilesEditor({
   onChange,
   className = '',
   showToolbar = true,
+  showStatusBar = true,
   showCommentPanel = true,
   showRevisionPanel = false,
   onToggleRevisionPanel,
@@ -401,8 +553,11 @@ export function CerteafilesEditor({
           zoom={zoom}
           margins={margins}
           placeholder={placeholder}
+          initialTextContent={initialTextContent}
+          onContentLoaded={onContentLoaded}
           onChange={onChange}
           showToolbar={showToolbar}
+          showStatusBar={showStatusBar}
           showCommentPanel={showCommentPanel}
           showRevisionPanel={showRevisionPanel}
           onToggleRevisionPanel={onToggleRevisionPanel}

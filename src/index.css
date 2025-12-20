@@ -616,6 +616,11 @@ body {
   min-height: 794px;
 }
 
+/* Orientation transition */
+.folio-page.orientation-transition {
+  transition: width 0.3s ease, min-height 0.3s ease;
+}
+
 /* Folio page number indicator */
 .folio-page::before {
   content: "Page " attr(data-folio-index);
@@ -1126,6 +1131,25 @@ body {
 }
 
 /* ============================================
+   Document Validated Mode
+   Per Specs: Only insertions visible (hide deletions)
+   ============================================ */
+
+/* Document validated - hide deletions, keep insertions visible */
+.document-validated .deletion-node {
+  display: none !important;
+}
+
+/* In validated mode, insertions are shown as normal text (accepted) */
+.document-validated .insertion-node {
+  background-color: transparent;
+  color: inherit;
+  text-decoration: none;
+  padding: 0;
+  cursor: default;
+}
+
+/* ============================================
    Footnote Styles
    ============================================ */
 
@@ -1195,4 +1219,319 @@ body {
 
 .footnote-highlight {
   animation: footnote-highlight 2s ease-out;
+}
+
+/* ============================================
+   Custom Shortcut Visual Representations
+   Figma-style badges for /, @, + shortcuts
+   ============================================ */
+
+/* Base mention pill styles - extended for new types */
+.mention-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  user-select: none;
+  cursor: pointer;
+  vertical-align: baseline;
+  transition: all 0.15s ease;
+}
+
+.mention-node:hover {
+  filter: brightness(0.95);
+  transform: translateY(-1px);
+}
+
+/* Internal link - Indigo */
+.mention-internal_link {
+  background-color: #e0e7ff;
+  border: 1px solid #6366f1;
+  color: #3730a3;
+}
+
+/* Annex link - Pink */
+.mention-annex_link {
+  background-color: #fce7f3;
+  border: 1px solid #ec4899;
+  color: #9d174d;
+}
+
+/* External document - Orange */
+.mention-external_document {
+  background-color: #ffedd5;
+  border: 1px solid #f97316;
+  color: #c2410c;
+}
+
+/* User mention - Blue (priority users have star) */
+.mention-user {
+  background-color: #dbeafe;
+  border: 1px solid #3b82f6;
+  color: #1e40af;
+}
+
+/* Non-priority user - lighter variant */
+.mention-user.non-priority {
+  background-color: #f1f5f9;
+  border: 1px solid #94a3b8;
+  color: #475569;
+}
+
+/* Product mention - Green */
+.mention-product {
+  background-color: #dcfce7;
+  border: 1px solid #22c55e;
+  color: #166534;
+}
+
+/* ============================================
+   Slash Command Visual Representations
+   Different styles for modèle vs document
+   ============================================ */
+
+/* Modèle de document context - Purple theme */
+.editor-context-template .slash-item-badge,
+.slash-item-badge.template-context {
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Document context - Blue theme */
+.editor-context-document .slash-item-badge,
+.slash-item-badge.document-context {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================
+   Plus Menu (+) Visual Representations
+   Context-aware badges for header/footer/document
+   ============================================ */
+
+/* Header context */
+.plus-item-badge.header-context {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* Footer context */
+.plus-item-badge.footer-context {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* Document body context */
+.plus-item-badge.body-context {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* ============================================
+   Dynamic Field Visual Representation
+   Pill-style elements for inserted fields
+   ============================================ */
+
+.dynamic-field-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border: 1px solid #22c55e;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #166534;
+  user-select: none;
+  cursor: default;
+  vertical-align: baseline;
+}
+
+.dynamic-field-node::before {
+  content: '+';
+  font-weight: 700;
+  color: #16a34a;
+}
+
+/* Template dynamic field - Purple variant */
+.editor-context-template .dynamic-field-node {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  border-color: #a855f7;
+  color: #6b21a8;
+}
+
+.editor-context-template .dynamic-field-node::before {
+  color: #9333ea;
+}
+
+/* ============================================
+   @ Menu Styles - Enhanced
+   ============================================ */
+
+.at-menu-wrapper {
+  z-index: 10000;
+}
+
+.at-menu .mention-type-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+}
+
+.at-menu .mention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.at-menu .mention-item:hover,
+.at-menu .mention-item.selected {
+  background-color: #f3f4f6;
+}
+
+.at-menu .mention-item.priority {
+  background-color: #fefce8;
+  border-left: 3px solid #eab308;
+}
+
+.at-menu .mention-item.priority:hover {
+  background-color: #fef9c3;
+}
+
+/* ============================================
+   Slash Menu Styles - Enhanced
+   ============================================ */
+
+.slash-menu-wrapper {
+  z-index: 10000;
+}
+
+.slash-menu .category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  background: #f9fafb;
+  position: sticky;
+  top: 0;
+}
+
+.slash-menu .command-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.slash-menu .command-item:hover,
+.slash-menu .command-item.selected {
+  background-color: #eff6ff;
+}
+
+.slash-menu .command-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: #f3f4f6;
+  color: #6b7280;
+  transition: all 0.1s ease;
+}
+
+.slash-menu .command-item:hover .command-icon,
+.slash-menu .command-item.selected .command-icon {
+  background-color: #dbeafe;
+  color: #2563eb;
+}
+
+/* ============================================
+   Plus Menu Styles - Enhanced
+   ============================================ */
+
+.plus-menu-wrapper {
+  z-index: 10000;
+}
+
+.plus-menu .field-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.plus-menu .field-item:hover,
+.plus-menu .field-item.selected {
+  background-color: #f0fdf4;
+}
+
+.plus-menu .field-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.plus-menu .field-preview {
+  padding: 2px 6px;
+  background-color: #f3f4f6;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  color: #6b7280;
 }

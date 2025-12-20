@@ -193,10 +193,11 @@ export class FolioNode extends ElementNode {
       div.className += ` ${theme.folio}`;
     }
 
-    // Set A4 dimensions based on orientation
+    // Set A4 dimensions based on orientation - use fixed height to prevent overflow
     const dimensions = this.getDimensions();
     div.style.width = `${dimensions.width}px`;
-    div.style.minHeight = `${dimensions.height}px`;
+    div.style.height = `${dimensions.height}px`;
+    div.style.maxHeight = `${dimensions.height}px`;
     div.style.backgroundColor = '#ffffff';
     div.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
     div.style.marginBottom = '24px';
@@ -221,10 +222,28 @@ export class FolioNode extends ElementNode {
   override updateDOM(prevNode: FolioNode, dom: HTMLElement): boolean {
     // Update orientation if changed
     if (prevNode.__orientation !== this.__orientation) {
+      console.log('[FolioNode] Orientation changed:', prevNode.__orientation, '->', this.__orientation);
       dom.setAttribute('data-folio-orientation', this.__orientation);
       const dimensions = this.getDimensions();
+
+      // Force immediate style update
       dom.style.width = `${dimensions.width}px`;
-      dom.style.minHeight = `${dimensions.height}px`;
+      dom.style.height = `${dimensions.height}px`;
+      dom.style.maxHeight = `${dimensions.height}px`;
+
+      // Add transition class for smooth animation
+      dom.classList.add('orientation-transition');
+
+      // Force reflow to apply changes immediately
+      void dom.offsetHeight;
+
+      // Remove transition class after animation
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          dom.classList.remove('orientation-transition');
+        }, 300);
+      });
+
       return false;
     }
 

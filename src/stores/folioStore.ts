@@ -18,6 +18,7 @@ import {
   DEFAULT_MARGINS,
 } from '../types/folio';
 import { generateLexicalContent } from '../utils/demoContent';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 // Get demo configuration from URL
 type DemoType = 'empty' | 'small' | 'large';
@@ -325,6 +326,11 @@ export const useFolioStore = create<FolioState>()(
 
       // Set active folio
       setActiveFolio: (id: string | null) => {
+        // Skip if a modal is open to prevent scroll during modal interactions
+        if (isModalCurrentlyOpen()) {
+          console.log('[FolioStore] setActiveFolio skipped (modal open):', id);
+          return;
+        }
         console.log('[FolioStore] setActiveFolio:', id);
         set({ activeFolioId: id });
       },

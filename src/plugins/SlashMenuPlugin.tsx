@@ -9,7 +9,7 @@ import {
   $getSelection,
   $isRangeSelection,
   $createParagraphNode,
-  COMMAND_PRIORITY_LOW,
+  COMMAND_PRIORITY_HIGH,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
@@ -355,7 +355,7 @@ export function SlashMenuPlugin({
           moveDown();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ARROW_UP_COMMAND,
@@ -364,7 +364,7 @@ export function SlashMenuPlugin({
           moveUp();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ENTER_COMMAND,
@@ -376,7 +376,7 @@ export function SlashMenuPlugin({
           }
           return false;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_TAB_COMMAND,
@@ -388,7 +388,7 @@ export function SlashMenuPlugin({
           }
           return false;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ESCAPE_COMMAND,
@@ -396,7 +396,7 @@ export function SlashMenuPlugin({
           handleClose();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       )
     );
   }, [

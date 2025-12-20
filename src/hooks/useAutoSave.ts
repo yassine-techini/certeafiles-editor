@@ -201,9 +201,19 @@ export function useAutoSave(options: UseAutoSaveOptions = {}): UseAutoSaveReturn
         clearTimeout(maxWaitTimerRef.current);
       }
 
-      // Save pending content on unmount
+      // Save pending content on unmount with error handling
       if (saveOnUnmount && pendingContentRef.current && onSave) {
-        onSave(pendingContentRef.current);
+        try {
+          const result = onSave(pendingContentRef.current);
+          // Handle async onSave - catch errors to prevent silent failures
+          if (result && typeof result.catch === 'function') {
+            result.catch((error: unknown) => {
+              console.error('[useAutoSave] Failed to save on unmount:', error);
+            });
+          }
+        } catch (error) {
+          console.error('[useAutoSave] Failed to save on unmount:', error);
+        }
       }
     };
   }, [saveOnUnmount, onSave]);

@@ -23,6 +23,7 @@ import {
 import { useHeaderFooterStore } from '../stores/headerFooterStore';
 import { useFolioStore } from '../stores/folioStore';
 import type { HeaderFooterContent, HeaderFooterSegment } from '../types/headerFooter';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 export interface HeaderFooterPluginProps {
   /** Whether to automatically inject headers/footers */
@@ -246,19 +247,33 @@ export function HeaderFooterPlugin({
    * Sync all headers/footers with store
    */
   const syncAllHeadersFooters = useCallback(() => {
-    editor.update(() => {
-      const root = $getRoot();
-      const folioNodes = $getAllFolioNodes(root);
-      const totalPages = folioNodes.length;
+    // Skip if a modal is open
+    if (isModalCurrentlyOpen()) {
+      console.log('[HeaderFooterPlugin] Skipping sync - modal is open');
+      return;
+    }
 
-      folioNodes.forEach((folioNode, index) => {
-        const pageNumber = index + 1;
-        injectHeader(folioNode, pageNumber, totalPages);
-        injectFooter(folioNode, pageNumber, totalPages);
-      });
+    editor.update(
+      () => {
+        const root = $getRoot();
+        const folioNodes = $getAllFolioNodes(root);
+        const totalPages = folioNodes.length;
 
-      console.log('[HeaderFooterPlugin] Synced headers/footers for', folioNodes.length, 'folios');
-    });
+        if (totalPages === 0) {
+          console.log('[HeaderFooterPlugin] No folios found, skipping sync');
+          return;
+        }
+
+        folioNodes.forEach((folioNode, index) => {
+          const pageNumber = index + 1;
+          injectHeader(folioNode, pageNumber, totalPages);
+          injectFooter(folioNode, pageNumber, totalPages);
+        });
+
+        console.log('[HeaderFooterPlugin] Synced headers/footers for', folioNodes.length, 'folios');
+      },
+      { tag: 'header-footer-sync', discrete: true }
+    );
   }, [editor, injectHeader, injectFooter]);
 
   // Initial injection
@@ -331,6 +346,9 @@ export function HeaderFooterPlugin({
       // Skip if this is from our own update
       if (tags.has('header-footer-sync')) return;
 
+      // Skip if modal is open
+      if (isModalCurrentlyOpen()) return;
+
       editor.getEditorState().read(() => {
         const root = $getRoot();
         const folioNodes = $getAllFolioNodes(root);
@@ -350,7 +368,7 @@ export function HeaderFooterPlugin({
           }
         });
 
-        if (needsSync) {
+        if (needsSync && !isModalCurrentlyOpen()) {
           setTimeout(syncAllHeadersFooters, 50);
         }
       });

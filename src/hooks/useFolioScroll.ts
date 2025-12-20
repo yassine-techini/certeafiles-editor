@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFolioStore } from '../stores/folioStore';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 export interface UseFolioScrollOptions {
   /** Debounce delay in ms for scroll updates */
@@ -115,6 +116,9 @@ export function useFolioScroll(
   // Scroll to a thumbnail in the panel
   const scrollToThumbnail = useCallback(
     (folioId: string, behavior: ScrollBehavior = 'smooth') => {
+      // Skip if a modal is open
+      if (isModalCurrentlyOpen()) return;
+
       const thumbnailElement = document.querySelector(
         `[data-folio-thumbnail="${folioId}"]`
       );
@@ -134,6 +138,9 @@ export function useFolioScroll(
     if (!isSyncing || Date.now() < syncDisabledUntilRef.current) {
       return;
     }
+
+    // Skip if a modal is open
+    if (isModalCurrentlyOpen()) return;
 
     const visibilityMap = visibilityMapRef.current;
     let maxVisibility = 0;
@@ -162,6 +169,11 @@ export function useFolioScroll(
     // Create observer
     observerRef.current = new IntersectionObserver(
       (entries) => {
+        // Skip if a modal is open - don't update visibility map
+        if (isModalCurrentlyOpen()) {
+          return;
+        }
+
         // Update visibility map
         entries.forEach((entry) => {
           const folioId = entry.target.getAttribute('data-folio-id');

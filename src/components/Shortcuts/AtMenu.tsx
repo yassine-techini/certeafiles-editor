@@ -3,7 +3,7 @@
  * Per Constitution Section 5 - Shortcuts & Commands
  */
 import { useEffect, useRef } from 'react';
-import { User, Package, FileText, Anchor, Star } from 'lucide-react';
+import { User, Package, FileText, Anchor, Star, Link, Paperclip, ExternalLink } from 'lucide-react';
 import {
   type MentionType,
   type MentionData,
@@ -41,6 +41,12 @@ function MentionIcon({
   const iconProps = { size, strokeWidth: 2 };
 
   switch (type) {
+    case 'internal_link':
+      return <Link {...iconProps} />;
+    case 'annex_link':
+      return <Paperclip {...iconProps} />;
+    case 'external_document':
+      return <ExternalLink {...iconProps} />;
     case 'user':
       return <User {...iconProps} />;
     case 'product':
@@ -50,7 +56,7 @@ function MentionIcon({
     case 'anchor':
       return <Anchor {...iconProps} />;
     default:
-      return <User {...iconProps} />;
+      return <Link {...iconProps} />;
   }
 }
 
@@ -115,8 +121,8 @@ export function AtMenu({
   // Track global index for keyboard navigation
   let globalIndex = 0;
 
-  // Group order
-  const groupOrder: MentionType[] = ['user', 'product', 'document', 'anchor'];
+  // Group order - new types first, then legacy types
+  const groupOrder: MentionType[] = ['internal_link', 'annex_link', 'external_document', 'user', 'product', 'document', 'anchor'];
 
   // No results message
   if (items.length === 0) {

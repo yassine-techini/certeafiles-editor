@@ -1,6 +1,9 @@
-// Zustand stores
-// Per Constitution Section 3.2
+/**
+ * Zustand Stores - State Management
+ * CerteaFiles Editor
+ */
 
+// Folio/Page Store
 export {
   useFolioStore,
   useActiveFolio,
@@ -9,6 +12,7 @@ export {
 } from './folioStore';
 export type { FolioState } from './folioStore';
 
+// Header/Footer Store
 export {
   useHeaderFooterStore,
   useDefaultHeader,
@@ -18,8 +22,24 @@ export {
 } from './headerFooterStore';
 export type { HeaderFooterState } from './headerFooterStore';
 
+// Revision/Track Changes Store
 export { useRevisionStore } from './revisionStore';
 export type { RevisionState } from './revisionStore';
 
-// Future exports:
-// export { useCommentStore } from './commentStore';
+// Comment Store
+export { useCommentStore } from './commentStore';
+
+// Slot Store
+export { useSlotStore } from './slotStore';
+
+// Footnote Store
+export { useFootnoteStore } from './footnoteStore';
+
+// Query Builder Store
+export { useQueryBuilderStore } from './queryBuilderStore';
+
+// Spell Check Store
+export { useSpellCheckStore } from './spellcheckStore';
+
+// Style Store
+export { useStyleStore } from './styleStore';

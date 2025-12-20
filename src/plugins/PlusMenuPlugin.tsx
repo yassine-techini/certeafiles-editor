@@ -8,6 +8,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   $getSelection,
   $isRangeSelection,
+  COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
@@ -404,7 +405,7 @@ export function PlusMenuPlugin({
           moveDown();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ARROW_UP_COMMAND,
@@ -413,7 +414,7 @@ export function PlusMenuPlugin({
           moveUp();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ENTER_COMMAND,
@@ -425,7 +426,7 @@ export function PlusMenuPlugin({
           }
           return false;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_TAB_COMMAND,
@@ -437,7 +438,7 @@ export function PlusMenuPlugin({
           }
           return false;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ESCAPE_COMMAND,
@@ -445,7 +446,7 @@ export function PlusMenuPlugin({
           handleClose();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       )
     );
   }, [

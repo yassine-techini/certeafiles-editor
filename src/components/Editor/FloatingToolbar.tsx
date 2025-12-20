@@ -2,7 +2,7 @@
  * FloatingToolbar - Contextual toolbar that appears on text selection
  * Per Constitution Section 3.1
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
@@ -122,6 +122,15 @@ export function FloatingToolbar({
   });
   const [isAnimating, setIsAnimating] = useState(false);
 
+  // Use refs to avoid stale closures in setTimeout callbacks
+  const isVisibleRef = useRef(isVisible);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isVisibleRef.current = isVisible;
+  }, [isVisible]);
+
   // Update format state based on current selection
   const updateFormatState = useCallback(() => {
     const selection = $getSelection();
@@ -148,6 +157,33 @@ export function FloatingToolbar({
     setFormatState((prev) => ({ ...prev, isLink }));
   }, []);
 
+  // Helper to hide toolbar with animation (prevents stale closures)
+  const hideToolbarWithAnimation = useCallback(() => {
+    // Clear any existing timeout
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+    }
+
+    // Only animate if currently visible
+    if (isVisibleRef.current) {
+      setIsAnimating(true);
+      hideTimeoutRef.current = setTimeout(() => {
+        setIsVisible(false);
+        setIsAnimating(false);
+        hideTimeoutRef.current = null;
+      }, 150);
+    }
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Update toolbar position and visibility
   const updateToolbar = useCallback(() => {
     editor.getEditorState().read(() => {
@@ -155,25 +191,13 @@ export function FloatingToolbar({
 
       // Only show for range selections with actual content
       if (!$isRangeSelection(selection) || selection.isCollapsed()) {
-        if (isVisible) {
-          setIsAnimating(true);
-          setTimeout(() => {
-            setIsVisible(false);
-            setIsAnimating(false);
-          }, 150);
-        }
+        hideToolbarWithAnimation();
         return;
       }
 
       const selectionText = selection.getTextContent();
       if (!selectionText.trim()) {
-        if (isVisible) {
-          setIsAnimating(true);
-          setTimeout(() => {
-            setIsVisible(false);
-            setIsAnimating(false);
-          }, 150);
-        }
+        hideToolbarWithAnimation();
         return;
       }
 
@@ -193,11 +217,17 @@ export function FloatingToolbar({
       setPosition(newPosition);
       updateFormatState();
 
-      if (!isVisible) {
+      if (!isVisibleRef.current) {
+        // Cancel any pending hide animation
+        if (hideTimeoutRef.current) {
+          clearTimeout(hideTimeoutRef.current);
+          hideTimeoutRef.current = null;
+          setIsAnimating(false);
+        }
         setIsVisible(true);
       }
     });
-  }, [editor, isVisible, updateFormatState]);
+  }, [editor, hideToolbarWithAnimation, updateFormatState]);
 
   // Register listeners
   useEffect(() => {

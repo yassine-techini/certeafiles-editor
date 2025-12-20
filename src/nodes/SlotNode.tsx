@@ -54,7 +54,17 @@ function $convertSlotElement(domNode: Node): DOMConversionOutput | null {
     const slotType = (domNode.getAttribute('data-slot-type') || 'dynamic_content') as SlotType;
     const role = (domNode.getAttribute('data-slot-role') || 'start') as SlotRole;
     const metadataStr = domNode.getAttribute('data-slot-metadata');
-    const metadata: SlotMetadata = metadataStr ? JSON.parse(metadataStr) : {};
+
+    // Safely parse metadata with error handling
+    let metadata: SlotMetadata = {};
+    if (metadataStr) {
+      try {
+        metadata = JSON.parse(metadataStr);
+      } catch (error) {
+        console.warn('[SlotNode] Failed to parse slot metadata:', error);
+        metadata = {};
+      }
+    }
 
     const node = $createSlotNode({
       slotId,

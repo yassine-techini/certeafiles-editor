@@ -700,6 +700,20 @@ function DemoApp(): JSX.Element {
   const handleRestoreVersion = useCallback((versionId: string) => {
     if (!editorRef.current) return;
 
+    // First, save current state as a backup before restoring
+    const currentEditorState = editorRef.current.getEditorState();
+    const currentSerializedState = JSON.stringify(currentEditorState.toJSON());
+
+    addVersion({
+      label: `Sauvegarde avant restauration - ${new Date().toLocaleString('fr-FR')}`,
+      content: currentSerializedState,
+      author: currentAuthor,
+      isAutoSave: true,
+    });
+
+    console.log('[DemoApp] Created backup before restoration');
+
+    // Now restore the selected version
     const version = restoreVersion(versionId);
     if (!version) return;
 
@@ -707,10 +721,11 @@ function DemoApp(): JSX.Element {
       const parsedState = JSON.parse(version.content);
       const newEditorState = editorRef.current.parseEditorState(parsedState);
       editorRef.current.setEditorState(newEditorState);
+      console.log('[DemoApp] Restored version:', versionId);
     } catch (error) {
       console.error('[DemoApp] Failed to restore version:', error);
     }
-  }, [restoreVersion]);
+  }, [restoreVersion, addVersion, currentAuthor]);
 
   // State for PDF import
   const [isImporting, setIsImporting] = useState(false);
@@ -1167,11 +1182,16 @@ function DemoApp(): JSX.Element {
               </div>
             )}
 
-            {/* Collaboration Status */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg">
-              {/* Status indicator */}
+            {/* Collaboration Status - More prominent */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
+              collaborationStatus === 'connected' ? 'bg-green-50 border-green-200' :
+              collaborationStatus === 'connecting' || collaborationStatus === 'reconnecting' ? 'bg-yellow-50 border-yellow-200' :
+              collaborationStatus === 'error' ? 'bg-red-50 border-red-200' :
+              'bg-slate-50 border-slate-200'
+            }`}>
+              {/* Status indicator - larger */}
               <div
-                className={`w-2 h-2 rounded-full ${
+                className={`w-3 h-3 rounded-full ${
                   collaborationStatus === 'connected' ? 'bg-green-500' :
                   collaborationStatus === 'connecting' || collaborationStatus === 'reconnecting' ? 'bg-yellow-500 animate-pulse' :
                   collaborationStatus === 'error' ? 'bg-red-500' :
@@ -1180,9 +1200,23 @@ function DemoApp(): JSX.Element {
                 title={`Status: ${collaborationStatus}`}
               />
 
+              {/* Status label */}
+              <span className={`text-xs font-medium ${
+                collaborationStatus === 'connected' ? 'text-green-700' :
+                collaborationStatus === 'connecting' || collaborationStatus === 'reconnecting' ? 'text-yellow-700' :
+                collaborationStatus === 'error' ? 'text-red-700' :
+                'text-slate-500'
+              }`}>
+                {collaborationStatus === 'connected' ? 'Connecté' :
+                 collaborationStatus === 'connecting' ? 'Connexion...' :
+                 collaborationStatus === 'reconnecting' ? 'Reconnexion...' :
+                 collaborationStatus === 'error' ? 'Erreur' :
+                 'Déconnecté'}
+              </span>
+
               {/* Connected users avatars */}
               {collaborationUsers.length > 0 && (
-                <div className="flex -space-x-2">
+                <div className="flex -space-x-2 ml-1">
                   {collaborationUsers.slice(0, 4).map((user, idx) => (
                     <div
                       key={user.id}
@@ -1206,7 +1240,7 @@ function DemoApp(): JSX.Element {
 
               {/* User count */}
               <span className="text-xs text-slate-500">
-                {collaborationUsers.length} {collaborationUsers.length === 1 ? 'utilisateur' : 'utilisateurs'}
+                ({collaborationUsers.length})
               </span>
             </div>
           </div>

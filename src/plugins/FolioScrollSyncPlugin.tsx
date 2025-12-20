@@ -5,6 +5,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useFolioStore } from '../stores/folioStore';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 export interface FolioScrollSyncPluginProps {
   /** Debounce delay in ms */
@@ -83,6 +84,11 @@ export function FolioScrollSyncPlugin({
   // Scroll thumbnail into view
   const scrollThumbnailIntoView = useCallback(
     (folioId: string, behavior: ScrollBehavior = 'smooth') => {
+      // Skip if a modal is open
+      if (isModalCurrentlyOpen()) {
+        return;
+      }
+
       const thumbnailElement = document.querySelector(
         `[data-folio-thumbnail="${folioId}"]`
       );
@@ -119,9 +125,19 @@ export function FolioScrollSyncPlugin({
     []
   );
 
+  // Check if any modal is currently open - use global state
+  const isModalOpen = useCallback(() => {
+    return isModalCurrentlyOpen();
+  }, []);
+
   // Update the most visible folio based on intersection ratios
   const updateMostVisibleFolio = useCallback(() => {
     if (Date.now() < syncDisabledUntilRef.current) {
+      return;
+    }
+
+    // Skip if a modal is open
+    if (isModalOpen()) {
       return;
     }
 
@@ -142,7 +158,7 @@ export function FolioScrollSyncPlugin({
       scrollThumbnailIntoView(mostVisibleId);
       onFolioVisible?.(mostVisibleId);
     }
-  }, [setActiveFolio, scrollThumbnailIntoView, onFolioVisible]);
+  }, [setActiveFolio, scrollThumbnailIntoView, onFolioVisible, isModalOpen]);
 
   // Set up IntersectionObserver for scroll detection
   useEffect(() => {
@@ -155,6 +171,11 @@ export function FolioScrollSyncPlugin({
     // Create observer
     observerRef.current = new IntersectionObserver(
       (entries) => {
+        // Skip if a modal is open - don't update visibility map
+        if (isModalCurrentlyOpen()) {
+          return;
+        }
+
         // Update visibility map
         entries.forEach((entry) => {
           const folioId = entry.target.getAttribute('data-folio-id');

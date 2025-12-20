@@ -76,3 +76,23 @@ export type {
   CursorState,
   RemoteCursor,
 } from './CursorPlugin';
+
+export { InitialContentPlugin } from './InitialContentPlugin';
+
+export {
+  VersionHistoryPlugin,
+  OPEN_VERSION_HISTORY_COMMAND,
+  CLOSE_VERSION_HISTORY_COMMAND,
+  QUICK_SAVE_VERSION_COMMAND,
+} from './VersionHistoryPlugin';
+export type { VersionHistoryPluginProps } from './VersionHistoryPlugin';
+
+export {
+  KeyboardShortcutsPlugin,
+  OPEN_SHORTCUTS_DIALOG_COMMAND,
+  CLOSE_SHORTCUTS_DIALOG_COMMAND,
+} from './KeyboardShortcutsPlugin';
+export type { KeyboardShortcutsPluginProps, KeyboardShortcut, ShortcutCategory } from './KeyboardShortcutsPlugin';
+
+export { AutoPaginationPlugin } from './AutoPaginationPlugin';
+export type { AutoPaginationPluginProps } from './AutoPaginationPlugin';

@@ -8,6 +8,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   $getSelection,
   $isRangeSelection,
+  COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
@@ -29,13 +30,19 @@ export interface AtMenuPluginProps {
   trigger?: string | undefined;
   /** Function to fetch mention suggestions */
   fetchSuggestions?: ((query: string, type?: MentionType) => Promise<MentionData[]>) | undefined;
+  /** Static list of internal links */
+  internalLinks?: MentionData[] | undefined;
+  /** Static list of annex links */
+  annexLinks?: MentionData[] | undefined;
+  /** Static list of external documents */
+  externalDocuments?: MentionData[] | undefined;
   /** Static list of users (if not using fetchSuggestions) */
   users?: MentionData[] | undefined;
   /** Static list of products (if not using fetchSuggestions) */
   products?: MentionData[] | undefined;
-  /** Static list of documents (if not using fetchSuggestions) */
+  /** Static list of documents (if not using fetchSuggestions) - backward compatibility */
   documents?: MentionData[] | undefined;
-  /** Static list of anchors (if not using fetchSuggestions) */
+  /** Static list of anchors (if not using fetchSuggestions) - backward compatibility */
   anchors?: MentionData[] | undefined;
   /** Max results to show */
   maxResults?: number | undefined;
@@ -43,31 +50,59 @@ export interface AtMenuPluginProps {
 
 /**
  * Default mock data for development
+ * Per specifications:
+ * - lien interne au document
+ * - lien vers annexe
+ * - lien vers document externe
+ * - lien vers utilisateur (filtré par étapes/compétences, puis autres utilisateurs)
+ * - lien vers produit en cours
  */
+
+// Liens internes au document
+const DEFAULT_INTERNAL_LINKS: MentionData[] = [
+  { id: 'internal-1', name: 'Section 1.2 - Introduction', type: 'internal_link', description: 'Lien vers section' },
+  { id: 'internal-2', name: 'Section 2.3 - Procédures', type: 'internal_link', description: 'Lien vers section' },
+  { id: 'internal-3', name: 'Section 4.1 - Validation', type: 'internal_link', description: 'Lien vers section' },
+];
+
+// Liens vers annexes
+const DEFAULT_ANNEX_LINKS: MentionData[] = [
+  { id: 'annex-1', name: 'Annexe A - Spécifications techniques', type: 'annex_link', description: 'Document annexe' },
+  { id: 'annex-2', name: 'Annexe B - Résultats des tests', type: 'annex_link', description: 'Document annexe' },
+  { id: 'annex-3', name: 'Annexe C - Formulaires', type: 'annex_link', description: 'Document annexe' },
+];
+
+// Liens vers documents externes
+const DEFAULT_EXTERNAL_DOCS: MentionData[] = [
+  { id: 'ext-1', name: 'ISO 13485:2016', type: 'external_document', description: 'Norme externe' },
+  { id: 'ext-2', name: 'Règlement 2017/745 MDR', type: 'external_document', description: 'Règlement européen' },
+  { id: 'ext-3', name: 'IEC 62304', type: 'external_document', description: 'Norme logiciel médical' },
+];
+
+// Utilisateurs - prioritaires (assignés à l'étape/compétence)
 const DEFAULT_USERS: MentionData[] = [
-  { id: 'user-1', name: 'Marie Dupont', type: 'user', email: 'marie@example.com', isPriority: true, description: 'Chef de projet' },
-  { id: 'user-2', name: 'Jean Martin', type: 'user', email: 'jean@example.com', description: 'Développeur' },
-  { id: 'user-3', name: 'Sophie Bernard', type: 'user', email: 'sophie@example.com', description: 'Designer' },
-  { id: 'user-4', name: 'Pierre Durand', type: 'user', email: 'pierre@example.com', isPriority: true, description: 'Responsable qualité' },
-  { id: 'user-5', name: 'Claire Moreau', type: 'user', email: 'claire@example.com', description: 'Analyste' },
+  { id: 'user-1', name: 'Dr. Martin Dupont', type: 'user', email: 'martin@example.com', isPriority: true, description: 'Responsable Qualité - Assigné à cette étape' },
+  { id: 'user-2', name: 'Sophie Bernard', type: 'user', email: 'sophie@example.com', isPriority: true, description: 'Ingénieure R&D - Compétence requise' },
+  // Autres utilisateurs (non prioritaires - affichés en couleur différente)
+  { id: 'user-3', name: 'Jean Lambert', type: 'user', email: 'jean@example.com', isPriority: false, description: 'Directeur Technique' },
+  { id: 'user-4', name: 'Marie Petit', type: 'user', email: 'marie@example.com', isPriority: false, description: 'Responsable Production' },
+  { id: 'user-5', name: 'Pierre Durand', type: 'user', email: 'pierre@example.com', isPriority: false, description: 'Analyste' },
 ];
 
+// Produits en cours
 const DEFAULT_PRODUCTS: MentionData[] = [
-  { id: 'prod-1', name: 'Certificat SSL', type: 'product', description: 'SKU: SSL-001' },
-  { id: 'prod-2', name: 'Licence Enterprise', type: 'product', description: 'SKU: LIC-ENT' },
-  { id: 'prod-3', name: 'Support Premium', type: 'product', description: 'SKU: SUP-PRE' },
+  { id: 'prod-1', name: 'Dispositif médical XR-100', type: 'product', description: 'Produit en cours' },
+  { id: 'prod-2', name: 'Module capteur SC-50', type: 'product', description: 'Composant principal' },
+  { id: 'prod-3', name: 'Software embarqué v2.0', type: 'product', description: 'Logiciel associé' },
 ];
 
+// Backward compatibility - anciens types
 const DEFAULT_DOCUMENTS: MentionData[] = [
   { id: 'doc-1', name: 'Cahier des charges', type: 'document', description: 'v2.1' },
-  { id: 'doc-2', name: 'Spécifications techniques', type: 'document', description: 'v1.0' },
-  { id: 'doc-3', name: 'Guide utilisateur', type: 'document', description: 'v3.2' },
 ];
 
 const DEFAULT_ANCHORS: MentionData[] = [
   { id: 'anchor-1', name: 'Introduction', type: 'anchor', description: 'Section 1' },
-  { id: 'anchor-2', name: 'Méthodologie', type: 'anchor', description: 'Section 2' },
-  { id: 'anchor-3', name: 'Conclusion', type: 'anchor', description: 'Section 5' },
 ];
 
 /**
@@ -134,11 +169,14 @@ export function AtMenuPlugin({
   enabled = true,
   trigger = '@',
   fetchSuggestions,
+  internalLinks = DEFAULT_INTERNAL_LINKS,
+  annexLinks = DEFAULT_ANNEX_LINKS,
+  externalDocuments = DEFAULT_EXTERNAL_DOCS,
   users = DEFAULT_USERS,
   products = DEFAULT_PRODUCTS,
   documents = DEFAULT_DOCUMENTS,
   anchors = DEFAULT_ANCHORS,
-  maxResults = 10,
+  maxResults = 15,
 }: AtMenuPluginProps): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
 
@@ -150,10 +188,10 @@ export function AtMenuPlugin({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [suggestions, setSuggestions] = useState<MentionData[]>([]);
 
-  // Combine all static items
+  // Combine all static items (in order of display priority)
   const allItems = useMemo(() => {
-    return [...users, ...products, ...documents, ...anchors];
-  }, [users, products, documents, anchors]);
+    return [...internalLinks, ...annexLinks, ...externalDocuments, ...users, ...products, ...documents, ...anchors];
+  }, [internalLinks, annexLinks, externalDocuments, users, products, documents, anchors]);
 
   // Filter and group items
   const { filtered: filteredItems, grouped: groupedItems } = useMemo(() => {
@@ -339,7 +377,7 @@ export function AtMenuPlugin({
           moveDown();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ARROW_UP_COMMAND,
@@ -348,7 +386,7 @@ export function AtMenuPlugin({
           moveUp();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ENTER_COMMAND,
@@ -360,7 +398,7 @@ export function AtMenuPlugin({
           }
           return false;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_TAB_COMMAND,
@@ -372,7 +410,7 @@ export function AtMenuPlugin({
           }
           return false;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       ),
       editor.registerCommand(
         KEY_ESCAPE_COMMAND,
@@ -380,7 +418,7 @@ export function AtMenuPlugin({
           handleClose();
           return true;
         },
-        COMMAND_PRIORITY_LOW
+        COMMAND_PRIORITY_HIGH
       )
     );
   }, [

@@ -22,6 +22,7 @@ import { FolioThumbnail } from './FolioThumbnail';
 import { useFolioDragDrop } from '../../hooks/useFolioDragDrop';
 import type { ThumbnailData } from '../../hooks/useFolioThumbnails';
 import type { Folio } from '../../types/folio';
+import { isModalCurrentlyOpen } from '../../utils/modalState';
 
 // Virtualization constants
 const ITEM_HEIGHT = 180; // Height of each thumbnail item (141px thumbnail + padding + compact icons + margins)
@@ -145,6 +146,9 @@ export const VirtualizedFolioList = memo(function VirtualizedFolioList({
     prevActiveFolioIdRef.current = activeFolioId;
 
     if (!activeFolioId || !containerRef.current) return;
+
+    // Skip if a modal is open
+    if (isModalCurrentlyOpen()) return;
 
     const activeIndex = folios.findIndex((f) => f.id === activeFolioId);
     if (activeIndex === -1) return;

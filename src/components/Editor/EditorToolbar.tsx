@@ -2,7 +2,7 @@
  * EditorToolbar - Main toolbar for the WYSIWYG editor
  * Per Constitution Section 3.1 - Simplified single-line design
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $createParagraphNode,
@@ -57,15 +57,20 @@ import {
   Code,
   ListOrdered,
   MoreHorizontal,
+  PanelTop,
+  History,
+  Keyboard,
 } from 'lucide-react';
 import { OPEN_TABLE_DIALOG_COMMAND } from '../../plugins/TablePlugin';
 import { INSERT_IMAGE_COMMAND } from '../../nodes/ImageNode';
+import { OPEN_VERSION_HISTORY_COMMAND } from '../../plugins/VersionHistoryPlugin';
+import { OPEN_SHORTCUTS_DIALOG_COMMAND } from '../../plugins/KeyboardShortcutsPlugin';
 
 export interface EditorToolbarProps {
   /** Additional class name */
   className?: string;
   /** Callback to open header/footer editor */
-  onEditHeaderFooter?: (() => void) | undefined;
+  onEditHeaderFooter?: () => void;
   /** Callback to toggle revision panel */
   onToggleRevisionPanel?: (() => void) | undefined;
   /** Whether revision panel is open */
@@ -158,6 +163,7 @@ const HIGHLIGHT_COLORS = [
  */
 export function EditorToolbar({
   className = '',
+  onEditHeaderFooter,
 }: EditorToolbarProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
 
@@ -190,6 +196,11 @@ export function EditorToolbar({
   const [fontSize, setFontSize] = useState('16px');
   const [textColor, setTextColor] = useState('#000000');
   const [highlightColor, setHighlightColor] = useState('transparent');
+
+  // Overflow detection for responsive toolbar
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const buttonsContainerRef = useRef<HTMLDivElement>(null);
+  const [hiddenButtons, setHiddenButtons] = useState<string[]>([]);
 
   // Update toolbar state based on selection
   const updateToolbar = useCallback(() => {
@@ -290,6 +301,47 @@ export function EditorToolbar({
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, [showBlockDropdown, showFontDropdown, showFontSizeDropdown, showTextColorDropdown, showHighlightDropdown, showAlignDropdown, showMoreDropdown]);
+
+  // Detect hidden buttons using ResizeObserver
+  useLayoutEffect(() => {
+    const container = buttonsContainerRef.current;
+    if (!container) return;
+
+    const checkOverflow = () => {
+      const containerRect = container.getBoundingClientRect();
+      const containerRight = containerRect.right - 60; // Reserve space for More button
+      const hidden: string[] = [];
+
+      // Get all toolbar items with data-toolbar-id
+      const items = container.querySelectorAll('[data-toolbar-id]');
+      items.forEach((item) => {
+        const itemRect = item.getBoundingClientRect();
+        const id = item.getAttribute('data-toolbar-id');
+        if (id && itemRect.right > containerRight) {
+          hidden.push(id);
+        }
+      });
+
+      setHiddenButtons(hidden);
+    };
+
+    // Initial check
+    checkOverflow();
+
+    // Use ResizeObserver to detect size changes
+    const resizeObserver = new ResizeObserver(() => {
+      checkOverflow();
+    });
+    resizeObserver.observe(container);
+
+    // Also listen to window resize
+    window.addEventListener('resize', checkOverflow);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, []);
 
   // Format text command handlers
   const formatBold = useCallback(() => {
@@ -504,21 +556,25 @@ export function EditorToolbar({
   };
 
   return (
-    <div className={`editor-toolbar-wrapper ${className}`}>
-      <div className="flex items-center gap-1 px-3 py-2 overflow-x-auto">
+    <div className={`editor-toolbar-wrapper ${className}`} ref={toolbarRef}>
+      <div className="flex items-center gap-1 px-3 py-2">
+        {/* Scrollable toolbar content */}
+        <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0" ref={buttonsContainerRef}>
         {/* Undo/Redo */}
-        <ToolbarButton onClick={handleUndo} disabled={!canUndo} title="Annuler (Ctrl+Z)">
-          <Undo size={18} />
-        </ToolbarButton>
-        <ToolbarButton onClick={handleRedo} disabled={!canRedo} title="Rétablir (Ctrl+Y)">
-          <Redo size={18} />
-        </ToolbarButton>
+        <div data-toolbar-id="undo-redo" className="flex items-center gap-1">
+          <ToolbarButton onClick={handleUndo} disabled={!canUndo} title="Annuler (Ctrl+Z)">
+            <Undo size={18} />
+          </ToolbarButton>
+          <ToolbarButton onClick={handleRedo} disabled={!canRedo} title="Rétablir (Ctrl+Y)">
+            <Redo size={18} />
+          </ToolbarButton>
+        </div>
 
         {/* Separator */}
         <div className="w-px h-6 bg-slate-200 mx-1" />
 
         {/* Block Type Dropdown */}
-        <div className="relative">
+        <div className="relative" data-toolbar-id="block-type">
           <button
             type="button"
             onClick={(e) => {
@@ -579,7 +635,7 @@ export function EditorToolbar({
         </div>
 
         {/* Font Family Dropdown */}
-        <div className="relative">
+        <div className="relative" data-toolbar-id="font-family">
           <button
             type="button"
             onClick={(e) => {
@@ -613,7 +669,7 @@ export function EditorToolbar({
         </div>
 
         {/* Font Size */}
-        <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50">
+        <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50" data-toolbar-id="font-size">
           <button
             type="button"
             onClick={() => adjustFontSize(-2)}
@@ -665,18 +721,20 @@ export function EditorToolbar({
         <div className="w-px h-6 bg-slate-200 mx-1" />
 
         {/* Text Formatting - B I U */}
-        <ToolbarButton onClick={formatBold} active={isBold} title="Gras (Ctrl+B)">
-          <Bold size={18} />
-        </ToolbarButton>
-        <ToolbarButton onClick={formatItalic} active={isItalic} title="Italique (Ctrl+I)">
-          <Italic size={18} />
-        </ToolbarButton>
-        <ToolbarButton onClick={formatUnderline} active={isUnderline} title="Souligné (Ctrl+U)">
-          <Underline size={18} />
-        </ToolbarButton>
+        <div className="flex items-center gap-0.5" data-toolbar-id="text-format">
+          <ToolbarButton onClick={formatBold} active={isBold} title="Gras (Ctrl+B)">
+            <Bold size={18} />
+          </ToolbarButton>
+          <ToolbarButton onClick={formatItalic} active={isItalic} title="Italique (Ctrl+I)">
+            <Italic size={18} />
+          </ToolbarButton>
+          <ToolbarButton onClick={formatUnderline} active={isUnderline} title="Souligné (Ctrl+U)">
+            <Underline size={18} />
+          </ToolbarButton>
+        </div>
 
         {/* Text Color Picker */}
-        <div className="relative">
+        <div className="relative" data-toolbar-id="text-color">
           <button
             type="button"
             onClick={(e) => {
@@ -713,7 +771,7 @@ export function EditorToolbar({
         </div>
 
         {/* Highlight Color Picker */}
-        <div className="relative">
+        <div className="relative" data-toolbar-id="highlight">
           <button
             type="button"
             onClick={(e) => {
@@ -751,7 +809,7 @@ export function EditorToolbar({
         </div>
 
         {/* Alignment Dropdown */}
-        <div className="relative">
+        <div className="relative" data-toolbar-id="alignment">
           <button
             type="button"
             onClick={(e) => {
@@ -811,17 +869,20 @@ export function EditorToolbar({
         </div>
 
         {/* List */}
-        <ToolbarButton
-          onClick={formatBulletList}
-          active={blockType === 'bullet'}
-          title="Liste à puces"
-        >
-          <List size={18} />
-        </ToolbarButton>
+        <div data-toolbar-id="list">
+          <ToolbarButton
+            onClick={formatBulletList}
+            active={blockType === 'bullet'}
+            title="Liste à puces"
+          >
+            <List size={18} />
+          </ToolbarButton>
+        </div>
 
         {/* Link */}
-        <ToolbarButton
-          onClick={() => {
+        <div data-toolbar-id="link">
+          <ToolbarButton
+            onClick={() => {
             // Simple link insertion - could be enhanced
             const url = window.prompt('URL du lien:');
             if (url) {
@@ -848,21 +909,27 @@ export function EditorToolbar({
           }}
           title="Insérer un lien"
         >
-          <Link2 size={18} />
-        </ToolbarButton>
+            <Link2 size={18} />
+          </ToolbarButton>
+        </div>
 
         {/* Table */}
-        <ToolbarButton onClick={handleInsertTable} title="Insérer un tableau">
-          <Table size={18} />
-        </ToolbarButton>
+        <div data-toolbar-id="table">
+          <ToolbarButton onClick={handleInsertTable} title="Insérer un tableau">
+            <Table size={18} />
+          </ToolbarButton>
+        </div>
 
         {/* Image */}
-        <ToolbarButton onClick={handleInsertImage} title="Insérer une image">
-          <Image size={18} />
-        </ToolbarButton>
+        <div data-toolbar-id="image">
+          <ToolbarButton onClick={handleInsertImage} title="Insérer une image">
+            <Image size={18} />
+          </ToolbarButton>
+        </div>
+        </div>
 
-        {/* More options dropdown */}
-        <div className="relative ml-auto">
+        {/* More options dropdown - outside scrollable area */}
+        <div className="relative flex-shrink-0 ml-1">
           <button
             type="button"
             onClick={(e) => {
@@ -877,7 +944,149 @@ export function EditorToolbar({
           </button>
 
           {showMoreDropdown && (
-            <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 min-w-[180px]">
+            <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 min-w-[200px] max-h-[400px] overflow-y-auto" style={{ zIndex: 9999 }}>
+              {/* Hidden toolbar buttons section */}
+              {hiddenButtons.length > 0 && (
+                <>
+                  <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Barre d'outils</div>
+
+                  {hiddenButtons.includes('text-format') && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { formatBold(); setShowMoreDropdown(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isBold ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <Bold size={16} />
+                        Gras
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { formatItalic(); setShowMoreDropdown(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isItalic ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <Italic size={16} />
+                        Italique
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { formatUnderline(); setShowMoreDropdown(false); }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isUnderline ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <Underline size={16} />
+                        Souligné
+                      </button>
+                    </>
+                  )}
+
+                  {hiddenButtons.includes('alignment') && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => formatAlign('left')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'left' ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <AlignLeft size={16} />
+                        Aligner à gauche
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => formatAlign('center')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'center' ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <AlignCenter size={16} />
+                        Centrer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => formatAlign('right')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'right' ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <AlignRight size={16} />
+                        Aligner à droite
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => formatAlign('justify')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'justify' ? 'bg-blue-50 text-blue-700' : ''}`}
+                      >
+                        <AlignJustify size={16} />
+                        Justifier
+                      </button>
+                    </>
+                  )}
+
+                  {hiddenButtons.includes('list') && (
+                    <button
+                      type="button"
+                      onClick={() => { formatBulletList(); setShowMoreDropdown(false); }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${blockType === 'bullet' ? 'bg-blue-50 text-blue-700' : ''}`}
+                    >
+                      <List size={16} />
+                      Liste à puces
+                    </button>
+                  )}
+
+                  {hiddenButtons.includes('link') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = window.prompt('URL du lien:');
+                        if (url) {
+                          editor.update(() => {
+                            const selection = $getSelection();
+                            if ($isRangeSelection(selection)) {
+                              const nodes = selection.getNodes();
+                              nodes.forEach((node) => {
+                                const element = editor.getElementByKey(node.getKey());
+                                if (element && element.parentElement) {
+                                  const link = document.createElement('a');
+                                  link.href = url;
+                                  link.target = '_blank';
+                                  link.style.color = '#2563eb';
+                                  link.style.textDecoration = 'underline';
+                                  link.textContent = element.textContent || url;
+                                  element.replaceWith(link);
+                                }
+                              });
+                            }
+                          });
+                        }
+                        setShowMoreDropdown(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
+                    >
+                      <Link2 size={16} />
+                      Insérer un lien
+                    </button>
+                  )}
+
+                  {hiddenButtons.includes('table') && (
+                    <button
+                      type="button"
+                      onClick={() => { handleInsertTable(); setShowMoreDropdown(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
+                    >
+                      <Table size={16} />
+                      Insérer un tableau
+                    </button>
+                  )}
+
+                  {hiddenButtons.includes('image') && (
+                    <button
+                      type="button"
+                      onClick={() => { handleInsertImage(); setShowMoreDropdown(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
+                    >
+                      <Image size={16} />
+                      Insérer une image
+                    </button>
+                  )}
+
+                  <div className="border-t border-gray-200 my-1" />
+                </>
+              )}
+
               <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Formatage</div>
               <button
                 type="button"
@@ -952,6 +1161,48 @@ export function EditorToolbar({
               >
                 <ListOrdered size={16} />
                 Liste numérotée
+              </button>
+
+              <div className="border-t border-gray-200 my-1" />
+              <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Page</div>
+              <button
+                type="button"
+                onClick={() => {
+                  onEditHeaderFooter?.();
+                  setShowMoreDropdown(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <PanelTop size={16} />
+                En-têtes et pieds de page
+              </button>
+
+              <div className="border-t border-gray-200 my-1" />
+              <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Document</div>
+              <button
+                type="button"
+                onClick={() => {
+                  editor.dispatchCommand(OPEN_VERSION_HISTORY_COMMAND, undefined);
+                  setShowMoreDropdown(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <History size={16} />
+                Historique des versions
+              </button>
+
+              <div className="border-t border-gray-200 my-1" />
+              <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Aide</div>
+              <button
+                type="button"
+                onClick={() => {
+                  editor.dispatchCommand(OPEN_SHORTCUTS_DIALOG_COMMAND, undefined);
+                  setShowMoreDropdown(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <Keyboard size={16} />
+                Raccourcis clavier
               </button>
             </div>
           )}

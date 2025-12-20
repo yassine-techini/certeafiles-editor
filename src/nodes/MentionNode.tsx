@@ -60,7 +60,17 @@ function $convertMentionElement(domNode: Node): DOMConversionOutput | null {
     const name = domNode.getAttribute('data-mention-name') || '';
     const avatarUrl = domNode.getAttribute('data-mention-avatar') || undefined;
     const metadataStr = domNode.getAttribute('data-mention-metadata');
-    const metadata: Record<string, unknown> = metadataStr ? JSON.parse(metadataStr) : {};
+
+    // Safely parse metadata with error handling
+    let metadata: Record<string, unknown> = {};
+    if (metadataStr) {
+      try {
+        metadata = JSON.parse(metadataStr);
+      } catch {
+        // Invalid JSON, use empty metadata
+        metadata = {};
+      }
+    }
 
     const node = $createMentionNode({
       mentionId,

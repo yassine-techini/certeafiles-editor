@@ -7,6 +7,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import type { LexicalEditor, SerializedEditorState } from 'lexical';
 import { useFolioStore } from '../stores/folioStore';
 import type { Folio, FolioCreatePayload, FolioMargins } from '../types/folio';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 export interface UseFoliosOptions {
   /** Auto-initialize with default folio */
@@ -121,6 +122,9 @@ export function useFolios(options: UseFoliosOptions = {}): UseFoliosReturn {
 
   // Scroll to a specific folio element
   const scrollToFolio = useCallback((id: string) => {
+    // Skip if a modal is open
+    if (isModalCurrentlyOpen()) return;
+
     const folioElement = document.querySelector(`[data-folio-id="${id}"]`);
     if (folioElement) {
       folioElement.scrollIntoView({

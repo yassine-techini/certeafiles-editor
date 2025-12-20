@@ -21,6 +21,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { A4LayoutPlugin } from '../../plugins/A4LayoutPlugin';
 import { FolioPlugin } from '../../plugins/FolioPlugin';
 import { FolioScrollSyncPlugin } from '../../plugins/FolioScrollSyncPlugin';
+import { AutoPaginationPlugin } from '../../plugins/AutoPaginationPlugin';
 import { HeaderFooterPlugin } from '../../plugins/HeaderFooterPlugin';
 import { PageNumberingPlugin } from '../../plugins/PageNumberingPlugin';
 import { SlotPlugin } from '../../plugins/SlotPlugin';
@@ -43,6 +44,7 @@ import { createEditorConfig } from '../../config';
 import { A4_CONSTANTS } from '../../utils/a4-constants';
 import { performanceMonitor, METRIC_NAMES, PERFORMANCE_TARGETS } from '../../utils/performance';
 import type { Orientation } from '../../utils/a4-constants';
+import { ErrorBoundary } from '../ErrorBoundary';
 
 // Lazy load heavy panel components
 const LazyAlignedCommentPanel = lazy(() => import('../Comments/AlignedCommentPanel'));
@@ -256,6 +258,7 @@ const EditorInner = memo(function EditorInner({
         {/* High priority plugins - load after first render */}
         <FolioPlugin autoSync={true} />
         <FolioScrollSyncPlugin enabled={true} debounceMs={150} />
+        <AutoPaginationPlugin enabled={true} debounceMs={500} />
         <HeaderFooterPlugin autoInject={true} syncWithStore={true} />
         <PageNumberingPlugin autoUpdate={true} debounceMs={100} />
         <SlotPlugin validateOnSave={true} />
@@ -326,26 +329,42 @@ const EditorInner = memo(function EditorInner({
         />
       </div>
 
-      {/* Comment Panel - lazy loaded */}
-      <Suspense fallback={<PanelLoadingFallback />}>
-        <LazyAlignedCommentPanel
-          isOpen={isCommentPanelOpen}
-          onToggle={handleToggleCommentPanel}
-          onNewComment={handleNewComment}
-          onScrollToThread={handleScrollToThread}
-          editorContainer={editorContainerRef.current}
-          onPositionsRecalculate={triggerAlignmentRecalc}
-        />
-      </Suspense>
-
-      {/* Revision Panel - lazy loaded */}
-      {isRevisionPanelOpen && (
+      {/* Comment Panel - lazy loaded with error boundary */}
+      <ErrorBoundary
+        fallback={
+          <div className="p-4 text-sm text-gray-500">
+            Erreur lors du chargement du panneau de commentaires.
+          </div>
+        }
+      >
         <Suspense fallback={<PanelLoadingFallback />}>
-          <LazyRevisionPanel
-            isOpen={isRevisionPanelOpen}
-            onClose={handleCloseRevisionPanel}
+          <LazyAlignedCommentPanel
+            isOpen={isCommentPanelOpen}
+            onToggle={handleToggleCommentPanel}
+            onNewComment={handleNewComment}
+            onScrollToThread={handleScrollToThread}
+            editorContainer={editorContainerRef.current}
+            onPositionsRecalculate={triggerAlignmentRecalc}
           />
         </Suspense>
+      </ErrorBoundary>
+
+      {/* Revision Panel - lazy loaded with error boundary */}
+      {isRevisionPanelOpen && (
+        <ErrorBoundary
+          fallback={
+            <div className="p-4 text-sm text-gray-500">
+              Erreur lors du chargement du panneau de révisions.
+            </div>
+          }
+        >
+          <Suspense fallback={<PanelLoadingFallback />}>
+            <LazyRevisionPanel
+              isOpen={isRevisionPanelOpen}
+              onClose={handleCloseRevisionPanel}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
     </div>
   );

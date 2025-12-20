@@ -283,7 +283,7 @@ export function SlashMenu({
         {Array.from(groupedItems.entries()).map(([category, categoryItems]) => (
           <div key={category}>
             {/* Category header */}
-            <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 sticky top-0">
+            <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50">
               {category}
             </div>
 

@@ -13,7 +13,6 @@ import {
 } from 'lexical';
 import { mergeRegister } from '@lexical/utils';
 import {
-  FolioNode,
   $createFolioNode,
   $createFolioNodeWithContent,
   $isFolioNode,
@@ -25,6 +24,7 @@ import {
 } from '../nodes/FolioNode';
 import { $generateNodesFromSerializedNodes } from '@lexical/clipboard';
 import { useFolioStore } from '../stores/folioStore';
+import { isModalCurrentlyOpen } from '../utils/modalState';
 
 export interface FolioPluginProps {
   /** Whether to auto-sync with store on changes */
@@ -38,10 +38,99 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
   const [editor] = useLexicalComposerContext();
   const isInitializedRef = useRef(false);
   const isSyncingRef = useRef(false);
+  // Generation counter to prevent feedback loops
+  const syncGenerationRef = useRef(0);
 
   // Get store state and actions
   const activeFolioId = useFolioStore((state) => state.activeFolioId);
   const { setActiveFolio, initialize } = useFolioStore.getState();
+
+  /**
+   * Sync editor FolioNodes TO the store (additive only - never removes existing store data)
+   * This is called when the editor has folio nodes that don't exist in the store
+   * Uses a generation counter to prevent race conditions
+   */
+  const syncEditorToStore = useCallback(() => {
+    if (isSyncingRef.current) return;
+
+    // Increment generation to track this sync operation
+    const currentGeneration = ++syncGenerationRef.current;
+    isSyncingRef.current = true;
+
+    try {
+      editor.getEditorState().read(() => {
+        // Check if a newer sync was started (race condition prevention)
+        if (currentGeneration !== syncGenerationRef.current) {
+          return;
+        }
+
+        const root = $getRoot();
+        const editorFolios = $getAllFolioNodes(root);
+        const storeState = useFolioStore.getState();
+        const storeFolios = storeState.folios;
+
+        // Only add missing folios to store - never clear or remove
+        if (editorFolios.length > 0) {
+          const newFolios = new Map(storeFolios);
+          let hasChanges = false;
+          let firstId: string | null = storeState.activeFolioId;
+
+          editorFolios.forEach((folioNode, index) => {
+            const folioId = folioNode.getFolioId();
+
+            // Only add if not already in store
+            if (!newFolios.has(folioId)) {
+              const orientation = folioNode.getOrientation();
+              const sectionId = folioNode.getSectionId();
+
+              const folio: import('../types/folio').Folio = {
+                id: folioId,
+                index,
+                orientation: orientation as 'portrait' | 'landscape',
+                sectionId: sectionId || null,
+                locked: false,
+                status: 'draft' as const,
+                margins: { top: 20, right: 20, bottom: 20, left: 20 },
+                content: null,
+                headerId: null,
+                footerId: null,
+                metadata: {},
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              };
+
+              newFolios.set(folioId, folio);
+              hasChanges = true;
+
+              if (index === 0 && !firstId) {
+                firstId = folioId;
+              }
+            } else {
+              // Update index if changed
+              const existingFolio = newFolios.get(folioId);
+              if (existingFolio && existingFolio.index !== index) {
+                newFolios.set(folioId, { ...existingFolio, index });
+                hasChanges = true;
+              }
+            }
+          });
+
+          // Final check before committing - ensure we're still the latest sync
+          if (hasChanges && currentGeneration === syncGenerationRef.current) {
+            useFolioStore.setState({
+              folios: newFolios,
+              activeFolioId: firstId,
+            });
+          }
+        }
+      });
+    } finally {
+      // Only reset if we're still the current generation
+      if (currentGeneration === syncGenerationRef.current) {
+        isSyncingRef.current = false;
+      }
+    }
+  }, [editor]);
 
   // Initialize folios in editor from store
   const initializeFoliosInEditor = useCallback(() => {
@@ -51,10 +140,12 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
       const root = $getRoot();
       const existingFolios = $getAllFolioNodes(root);
 
-      // If there are already folio nodes, skip initialization
+      // If there are already folio nodes, sync them TO the store and skip init
       if (existingFolios.length > 0) {
-        console.log('[FolioPlugin] Editor already has folio nodes, skipping init');
+        console.log('[FolioPlugin] Editor already has', existingFolios.length, 'folio nodes, syncing to store');
         isInitializedRef.current = true;
+        // Sync editor folios to store (outside of update to avoid nested updates)
+        setTimeout(() => syncEditorToStore(), 0);
         return;
       }
 
@@ -105,94 +196,7 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
 
       isInitializedRef.current = true;
     });
-  }, [editor, initialize]);
-
-  // Sync store folios to editor nodes
-  const syncStoreToEditor = useCallback(() => {
-    if (isSyncingRef.current) return;
-    isSyncingRef.current = true;
-
-    editor.update(() => {
-      const root = $getRoot();
-      const existingNodes = $getAllFolioNodes(root);
-      const storeFolios = useFolioStore.getState().getFoliosInOrder();
-
-      // Create a map of existing nodes by folioId
-      const nodeMap = new Map<string, FolioNode>();
-      existingNodes.forEach((node) => {
-        nodeMap.set(node.getFolioId(), node);
-      });
-
-      // Track which nodes we've processed
-      const processedIds = new Set<string>();
-
-      // Update or create nodes for each store folio
-      storeFolios.forEach((folio, index) => {
-        processedIds.add(folio.id);
-        const existingNode = nodeMap.get(folio.id);
-
-        if (existingNode) {
-          // Update existing node if properties changed
-          if (existingNode.getFolioIndex() !== index) {
-            existingNode.setFolioIndex(index);
-          }
-          if (existingNode.getOrientation() !== folio.orientation) {
-            existingNode.setOrientation(folio.orientation);
-          }
-          if (existingNode.getSectionId() !== folio.sectionId) {
-            existingNode.setSectionId(folio.sectionId);
-          }
-        } else {
-          // Create new folio node
-          const newNode = $createFolioNodeWithContent({
-            folioId: folio.id,
-            folioIndex: index,
-            orientation: folio.orientation,
-            sectionId: folio.sectionId,
-          });
-
-          // Insert at correct position
-          const allNodes = $getAllFolioNodes(root);
-          if (index >= allNodes.length) {
-            root.append(newNode);
-          } else {
-            const nodeAtIndex = allNodes[index];
-            if (nodeAtIndex) {
-              nodeAtIndex.insertBefore(newNode);
-            } else {
-              root.append(newNode);
-            }
-          }
-          console.log('[FolioPlugin] Created new folio node:', folio.id);
-        }
-      });
-
-      // Remove nodes that are no longer in store
-      existingNodes.forEach((node) => {
-        if (!processedIds.has(node.getFolioId())) {
-          console.log('[FolioPlugin] Removing folio node:', node.getFolioId());
-          node.remove();
-        }
-      });
-
-      // Reorder nodes to match store order
-      const reorderedNodes = $getAllFolioNodes(root);
-      reorderedNodes.forEach((node, index) => {
-        const expectedFolio = storeFolios[index];
-        if (expectedFolio && node.getFolioId() !== expectedFolio.id) {
-          // Node is in wrong position, find correct node and swap
-          const correctNode = reorderedNodes.find(
-            (n) => n.getFolioId() === expectedFolio.id
-          );
-          if (correctNode) {
-            node.insertBefore(correctNode);
-          }
-        }
-      });
-    });
-
-    isSyncingRef.current = false;
-  }, [editor]);
+  }, [editor, initialize, syncEditorToStore]);
 
   // Handle INSERT_FOLIO_COMMAND
   const handleInsertFolio = useCallback(
@@ -325,7 +329,7 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
     );
   }, [editor, handleInsertFolio, handleDeleteFolio, handleUpdateFolio]);
 
-  // Subscribe to store changes and sync to editor
+  // Subscribe to store changes and sync to editor (only for orientation/sectionId changes)
   useEffect(() => {
     if (!autoSync) return;
 
@@ -333,35 +337,81 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
     const unsubscribe = useFolioStore.subscribe(
       (state) => state.folios,
       (newFoliosMap, prevFoliosMap) => {
+        // Skip if we're currently syncing (to avoid loops)
+        if (isSyncingRef.current) return;
+
         // Convert to arrays for comparison
         const newFolios = Array.from(newFoliosMap.values()).sort((a, b) => a.index - b.index);
         const prevFolios = Array.from(prevFoliosMap.values()).sort((a, b) => a.index - b.index);
 
-        // Only sync if folios actually changed
-        if (
-          newFolios.length !== prevFolios.length ||
-          newFolios.some((f, i) => {
-            const prev = prevFolios[i];
-            return (
-              !prev ||
-              f.id !== prev.id ||
-              f.orientation !== prev.orientation ||
-              f.index !== prev.index
-            );
-          })
-        ) {
-          console.log('[FolioPlugin] Store changed, syncing to editor');
-          syncStoreToEditor();
+        // Check for orientation changes specifically
+        const orientationChanged = newFolios.some((f, i) => {
+          const prev = prevFolios[i];
+          return prev && f.id === prev.id && f.orientation !== prev.orientation;
+        });
+
+        // Only sync orientation changes - don't sync count changes (that comes from editor)
+        if (orientationChanged) {
+          console.log('[FolioPlugin] Store orientation changed, syncing to editor');
+
+          editor.update(() => {
+            const root = $getRoot();
+            newFolios.forEach((folio) => {
+              const folioNode = $getFolioNodeById(root, folio.id);
+              if (folioNode && folioNode.getOrientation() !== folio.orientation) {
+                console.log('[FolioPlugin] Updating orientation for folio:', folio.id, folio.orientation);
+                folioNode.setOrientation(folio.orientation);
+              }
+            });
+          }, { discrete: true });
         }
+        // NOTE: We don't call syncStoreToEditor for count changes anymore
+        // The editor is the source of truth for content/count
       }
     );
 
     return unsubscribe;
-  }, [autoSync, syncStoreToEditor]);
+  }, [autoSync, editor]);
+
+  // Keep store in sync when folios are added/removed in editor (e.g., during auto-pagination)
+  useEffect(() => {
+    if (!autoSync) return;
+
+    let lastFolioCount = 0;
+
+    const removeUpdateListener = editor.registerUpdateListener(({ editorState }) => {
+      // Skip if a modal is open
+      if (isModalCurrentlyOpen()) return;
+
+      editorState.read(() => {
+        const root = $getRoot();
+        const editorFolios = $getAllFolioNodes(root);
+        const storeFolios = useFolioStore.getState().folios;
+
+        // Only sync if editor has more folios than store (new folios were created)
+        // This handles auto-pagination creating new pages
+        if (editorFolios.length !== lastFolioCount && editorFolios.length !== storeFolios.size) {
+          lastFolioCount = editorFolios.length;
+
+          // Defer to avoid state updates during render
+          setTimeout(() => {
+            // Check modal again before syncing
+            if (isModalCurrentlyOpen()) return;
+            syncEditorToStore();
+          }, 10);
+        }
+      });
+    });
+
+    return removeUpdateListener;
+  }, [autoSync, editor, syncEditorToStore]);
 
   // Track active folio based on selection
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
+      // Skip if a modal is open to prevent unwanted scroll sync
+      if (isModalCurrentlyOpen()) return;
+
       editorState.read(() => {
         const selection = $getSelection();
         if (!$isRangeSelection(selection)) return;

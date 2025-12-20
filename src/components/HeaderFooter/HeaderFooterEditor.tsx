@@ -3,33 +3,17 @@
  * Per Constitution Section 4.2 - Headers and Footers
  * Redesigned per design specs with dynamic variables
  */
-import { useState, useCallback, useEffect } from 'react';
-import { LexicalComposer } from '@lexical/react/LexicalComposer';
-import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
-import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import type { EditorState, LexicalEditor, SerializedEditorState } from 'lexical';
-import { $getRoot, $createParagraphNode, $createTextNode, $getSelection, $isRangeSelection } from 'lexical';
+import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import type { SerializedEditorState } from 'lexical';
 import {
   X,
-  Plus,
-  Undo,
-  Redo,
-  Bold,
-  Italic,
-  Underline,
-  ChevronDown,
-  Minus,
-  AlignLeft,
-  Link,
-  Table,
   RotateCcw,
   AlertTriangle,
 } from 'lucide-react';
 
-import { PageNumberNode } from '../../nodes/PageNumberNode';
 import { useHeaderFooterStore } from '../../stores/headerFooterStore';
 import type { HeaderFooterContent } from '../../types/headerFooter';
+import { setModalOpen } from '../../utils/modalState';
 
 export interface HeaderFooterEditorProps {
   /** Whether the modal is open */
@@ -40,19 +24,6 @@ export interface HeaderFooterEditorProps {
   folioId: string | null;
 }
 
-/**
- * Dynamic variables available for insertion
- */
-const DYNAMIC_VARIABLES = [
-  { id: 'logoEntreprise', label: 'Logo Entreprise', description: 'Logo de l\'entreprise' },
-  { id: 'nomGroupeProduits', label: 'Nom Groupe Produits', description: 'Nom du groupe de produits' },
-  { id: 'nomDocument', label: 'Nom Document', description: 'Nom du document' },
-  { id: 'refVersionneeModele', label: 'Réf. Version Modèle', description: 'Référence versionnée du modèle' },
-  { id: 'dateApplicationModele', label: 'Date Application', description: 'Date d\'application du modèle' },
-  { id: 'pagecourante', label: 'Page Courante', description: 'Numéro de page actuel' },
-  { id: 'nbreTotalPages', label: 'Total Pages', description: 'Nombre total de pages' },
-  { id: 'refVersionneeDocument', label: 'Réf. Version Doc', description: 'Référence versionnée du document' },
-];
 
 /**
  * Special sections configuration
@@ -66,281 +37,16 @@ const SPECIAL_SECTIONS = [
 ];
 
 /**
- * Mini editor configuration
+ * Helper to extract text content from HeaderFooterContent
  */
-const miniEditorConfig = {
-  namespace: 'HeaderFooterMiniEditor',
-  theme: {
-    paragraph: 'hf-paragraph',
-    text: {
-      bold: 'hf-bold',
-      italic: 'hf-italic',
-      underline: 'hf-underline',
-    },
-  },
-  nodes: [PageNumberNode],
-  onError: (error: Error) => {
-    console.error('[HeaderFooterEditor] Error:', error);
-  },
-};
-
-/**
- * Variable tag component - insertable token
- */
-function VariableTag({
-  variable,
-  onClick,
-}: {
-  variable: string;
-  onClick?: () => void;
-}): JSX.Element {
-  return (
-    <span
-      className="inline-flex items-center px-2 py-0.5 mx-0.5 text-sm font-medium text-blue-800 bg-blue-100 border border-blue-300 rounded cursor-pointer hover:bg-blue-200 transition-colors"
-      onClick={onClick}
-    >
-      {variable}
-    </span>
-  );
+function getContentText(content: HeaderFooterContent | null): string {
+  if (!content) return '';
+  const parts: string[] = [];
+  if (content.left?.content) parts.push(content.left.content);
+  if (content.center?.content) parts.push(content.center.content);
+  if (content.right?.content) parts.push(content.right.content);
+  return parts.join('  |  ');
 }
-
-/**
- * Mini toolbar for header/footer editors
- */
-function MiniToolbar(): JSX.Element {
-  const [showVariables, setShowVariables] = useState(false);
-  const [editor] = useLexicalComposerContext();
-
-  const insertVariable = useCallback(
-    (variableId: string) => {
-      editor.update(() => {
-        const selection = $getSelection();
-        if ($isRangeSelection(selection)) {
-          selection.insertText(`{${variableId}}`);
-        }
-      });
-      setShowVariables(false);
-    },
-    [editor]
-  );
-
-  return (
-    <div className="flex items-center gap-1 px-3 py-2 bg-blue-50 border-b border-blue-100 flex-wrap">
-      {/* Undo/Redo */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Annuler">
-        <Undo size={16} />
-      </button>
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Rétablir">
-        <Redo size={16} />
-      </button>
-
-      <div className="w-px h-5 bg-blue-200 mx-1" />
-
-      {/* Block type */}
-      <button
-        type="button"
-        className="flex items-center gap-1 px-2 py-1 text-sm bg-white rounded border border-gray-200 hover:bg-gray-50"
-      >
-        Paragraphe <ChevronDown size={12} />
-      </button>
-
-      {/* Font */}
-      <button
-        type="button"
-        className="flex items-center gap-1 px-2 py-1 text-sm bg-white rounded border border-gray-200 hover:bg-gray-50"
-      >
-        Time New ... <ChevronDown size={12} />
-      </button>
-
-      {/* Font size */}
-      <div className="flex items-center border border-gray-200 rounded bg-white">
-        <button type="button" className="p-1 hover:bg-gray-100 rounded-l">
-          <Minus size={12} />
-        </button>
-        <span className="px-2 text-sm">16px</span>
-        <button type="button" className="p-1 hover:bg-gray-100 rounded-r">
-          <Plus size={12} />
-        </button>
-      </div>
-
-      <div className="w-px h-5 bg-blue-200 mx-1" />
-
-      {/* Text formatting */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Gras">
-        <Bold size={16} />
-      </button>
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Italique">
-        <Italic size={16} />
-      </button>
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Souligné">
-        <Underline size={16} />
-      </button>
-
-      {/* Text color */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600 relative" title="Couleur du texte">
-        <span className="font-bold text-red-500">T</span>
-        <ChevronDown size={10} className="absolute bottom-0.5 right-0.5" />
-      </button>
-
-      {/* Highlight */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600 relative" title="Surlignage">
-        <span className="font-bold text-yellow-500 bg-yellow-100 px-0.5">A</span>
-        <ChevronDown size={10} className="absolute bottom-0.5 right-0.5" />
-      </button>
-
-      <div className="w-px h-5 bg-blue-200 mx-1" />
-
-      {/* Alignment */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Alignement">
-        <AlignLeft size={16} />
-        <ChevronDown size={10} className="ml-0.5" />
-      </button>
-
-      {/* Link */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Lien">
-        <Link size={16} />
-      </button>
-
-      {/* Table */}
-      <button type="button" className="p-1.5 hover:bg-blue-100 rounded text-gray-600" title="Tableau">
-        <Table size={16} />
-        <ChevronDown size={10} className="ml-0.5" />
-      </button>
-
-      <div className="flex-1" />
-
-      {/* Insert variable dropdown */}
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setShowVariables(!showVariables)}
-          className="flex items-center gap-1 px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          <Plus size={14} /> Variable
-        </button>
-        {showVariables && (
-          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[220px] py-1 max-h-[250px] overflow-y-auto">
-            {DYNAMIC_VARIABLES.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => insertVariable(v.id)}
-                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex flex-col"
-              >
-                <span className="font-medium text-gray-900">{v.label}</span>
-                <span className="text-xs text-gray-500">{v.id}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Plugin to initialize editor content
- */
-function InitialContentPlugin({
-  content,
-}: {
-  content: HeaderFooterContent | null;
-}): null {
-  const [editor] = useLexicalComposerContext();
-
-  useEffect(() => {
-    if (content) {
-      editor.update(() => {
-        const root = $getRoot();
-        root.clear();
-
-        // Build display text from segments
-        const parts: string[] = [];
-        if (content.left?.content) parts.push(content.left.content);
-        if (content.center?.content) parts.push(content.center.content);
-        if (content.right?.content) parts.push(content.right.content);
-
-        const displayText = parts.join('  |  ') || '';
-
-        const paragraph = $createParagraphNode();
-        paragraph.append($createTextNode(displayText));
-        root.append(paragraph);
-      });
-    }
-  }, [editor, content]);
-
-  return null;
-}
-
-/**
- * Plugin to capture editor state changes
- */
-function EditorStatePlugin({
-  onChange,
-}: {
-  onChange: (state: SerializedEditorState) => void;
-}): JSX.Element {
-  const handleChange = useCallback(
-    (editorState: EditorState, _editor: LexicalEditor) => {
-      onChange(editorState.toJSON());
-    },
-    [onChange]
-  );
-
-  return <OnChangePlugin onChange={handleChange} />;
-}
-
-/**
- * Header visual preview with three columns
- */
-function HeaderPreview(): JSX.Element {
-  return (
-    <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-      <table className="w-full border-collapse text-sm">
-        <tbody>
-          <tr>
-            <td className="border border-gray-200 p-3 w-1/4 align-top">
-              <VariableTag variable="logoEntreprise" />
-            </td>
-            <td className="border border-gray-200 p-3 w-1/2 align-top text-center">
-              <div className="font-bold text-lg">
-                <VariableTag variable="nomGroupeProduits" />
-              </div>
-              <div className="font-semibold mt-1">
-                <VariableTag variable="nomDocument" />
-              </div>
-            </td>
-            <td className="border border-gray-200 p-3 w-1/4 align-top text-right text-xs">
-              <div><VariableTag variable="refVersionneeModele" /></div>
-              <div className="mt-1">Application date:</div>
-              <div><VariableTag variable="dateApplicationModele" /></div>
-              <div className="mt-1">
-                Page <VariableTag variable="pagecourante" /> sur <VariableTag variable="nbreTotalPages" />
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/**
- * Footer visual preview
- */
-function FooterPreview(): JSX.Element {
-  return (
-    <div className="border border-gray-300 rounded-lg overflow-hidden bg-white p-4 text-center">
-      <VariableTag variable="refVersionneeDocument" />
-      <span className="mx-2">-</span>
-      <VariableTag variable="nomDocument" />
-    </div>
-  );
-}
-
-/**
- * HeaderFooterEditor - Modal component for editing headers, footers, and special sections
- */
 /**
  * Reset Confirmation Dialog
  */
@@ -400,9 +106,19 @@ export function HeaderFooterEditor({
 }: HeaderFooterEditorProps): JSX.Element | null {
   const [headerState, setHeaderState] = useState<SerializedEditorState | null>(null);
   const [footerState, setFooterState] = useState<SerializedEditorState | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_headerEvenState, setHeaderEvenState] = useState<SerializedEditorState | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_footerEvenState, setFooterEvenState] = useState<SerializedEditorState | null>(null);
   const [sectionTitles, setSectionTitles] = useState<Record<string, string>>({});
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
   const [resetTarget, setResetTarget] = useState<'header' | 'footer' | 'all'>('all');
+
+  // Odd/Even page options
+  const [headerDifferentOddEven, setHeaderDifferentOddEven] = useState(false);
+  const [footerDifferentOddEven, setFooterDifferentOddEven] = useState(false);
+  const [headerShowOnFirstPage, setHeaderShowOnFirstPage] = useState(true);
+  const [footerShowOnFirstPage, setFooterShowOnFirstPage] = useState(true);
 
   // Store actions
   const {
@@ -444,18 +160,132 @@ export function HeaderFooterEditor({
       ? footers.get(defaultFooterId) ?? null
       : null;
 
-  // Reset state when modal opens
+  // CRITICAL: Set modal state synchronously using useLayoutEffect
+  // This runs before useEffect and before browser paint
+  useLayoutEffect(() => {
+    if (isOpen) {
+      setModalOpen(true);
+      console.log('[HeaderFooterEditor] Modal opened - setModalOpen(true)');
+    }
+    return () => {
+      if (isOpen) {
+        setModalOpen(false);
+        console.log('[HeaderFooterEditor] Modal closed - setModalOpen(false)');
+      }
+    };
+  }, [isOpen]);
+
+  // Reset state when modal opens and prevent background scroll
   useEffect(() => {
     if (isOpen) {
       setHeaderState(null);
       setFooterState(null);
+      setHeaderEvenState(null);
+      setFooterEvenState(null);
+
+      // Initialize odd/even settings from content
+      if (headerContent) {
+        setHeaderDifferentOddEven(headerContent.differentOddEven ?? false);
+        setHeaderShowOnFirstPage(headerContent.showOnFirstPage ?? true);
+      } else {
+        setHeaderDifferentOddEven(false);
+        setHeaderShowOnFirstPage(true);
+      }
+
+      if (footerContent) {
+        setFooterDifferentOddEven(footerContent.differentOddEven ?? false);
+        setFooterShowOnFirstPage(footerContent.showOnFirstPage ?? true);
+      } else {
+        setFooterDifferentOddEven(false);
+        setFooterShowOnFirstPage(true);
+      }
+
       // Initialize section titles with defaults
       const defaultTitles: Record<string, string> = {};
       SPECIAL_SECTIONS.forEach((s) => {
         defaultTitles[s.id] = s.defaultTitle;
       });
       setSectionTitles(defaultTitles);
+
+      // Prevent ALL background interactions when modal is open
+      const originalOverflow = document.body.style.overflow;
+      const originalPosition = document.body.style.position;
+      const originalTop = document.body.style.top;
+      const originalWidth = document.body.style.width;
+      const scrollY = window.scrollY;
+
+      // Lock the body completely
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
+
+      // Store the original scroll positions of all scrollable containers
+      const allScrollContainers = document.querySelectorAll('.overflow-auto, .overflow-y-auto, .overflow-scroll') as NodeListOf<HTMLElement>;
+      const savedScrollPositions = new Map<HTMLElement, number>();
+      allScrollContainers.forEach((container) => {
+        savedScrollPositions.set(container, container.scrollTop);
+      });
+
+      // Block ALL scroll events at capture phase on document
+      const blockAllScrollEvents = (e: Event) => {
+        const modal = document.querySelector('[data-modal-open="true"]');
+        if (!modal) return;
+
+        const target = e.target as Node;
+        // Allow scroll only inside the modal
+        if (!modal.contains(target)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      };
+
+      // Block wheel events globally
+      const blockWheelEvent = (e: WheelEvent) => {
+        const modal = document.querySelector('[data-modal-open="true"]');
+        if (!modal) return;
+
+        const target = e.target as Node;
+        if (!modal.contains(target)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+
+      // Restore scroll positions if they change
+      const enforceScrollPosition = () => {
+        savedScrollPositions.forEach((scrollTop, container) => {
+          if (container.scrollTop !== scrollTop) {
+            container.scrollTop = scrollTop;
+          }
+        });
+      };
+
+      // Add listeners at capture phase for maximum priority
+      document.addEventListener('scroll', blockAllScrollEvents, { capture: true, passive: false });
+      document.addEventListener('wheel', blockWheelEvent, { capture: true, passive: false });
+
+      // Periodically enforce scroll positions
+      const enforceInterval = setInterval(enforceScrollPosition, 50);
+
+      return () => {
+        // Restore body styles
+        document.body.style.overflow = originalOverflow;
+        document.body.style.position = originalPosition;
+        document.body.style.top = originalTop;
+        document.body.style.width = originalWidth;
+
+        // Restore scroll position
+        window.scrollTo(0, scrollY);
+
+        // Clean up listeners
+        clearInterval(enforceInterval);
+        document.removeEventListener('scroll', blockAllScrollEvents, { capture: true });
+        document.removeEventListener('wheel', blockWheelEvent, { capture: true });
+      };
     }
+    return undefined;
   }, [isOpen]);
 
   /**
@@ -573,7 +403,7 @@ export function HeaderFooterEditor({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" data-modal-open="true">
       <div className="bg-gray-50 rounded-xl shadow-2xl w-[900px] max-w-[95vw] max-h-[90vh] flex flex-col">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white rounded-t-xl">
@@ -594,21 +424,70 @@ export function HeaderFooterEditor({
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           {/* Header Section */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">En-tête:</h3>
-            <div className="bg-blue-50 rounded-xl overflow-hidden border border-blue-100">
-              <LexicalComposer initialConfig={miniEditorConfig}>
-                <MiniToolbar />
-                <div className="p-4">
-                  <HeaderPreview />
-                  <p className="text-xs text-gray-500 mt-2 italic">
-                    Utilisez + pour accéder aux éléments nécessaires
-                  </p>
-                </div>
-                <InitialContentPlugin content={headerContent} />
-                <EditorStatePlugin onChange={setHeaderState} />
-                <HistoryPlugin />
-              </LexicalComposer>
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-sm font-medium text-gray-700">En-tête:</label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={headerShowOnFirstPage}
+                    onChange={(e) => setHeaderShowOnFirstPage(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Afficher sur la première page
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={headerDifferentOddEven}
+                    onChange={(e) => setHeaderDifferentOddEven(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Différencier pages paires/impaires
+                </label>
+              </div>
             </div>
+
+            {/* Odd pages (or all pages if not differentiated) */}
+            <div className="space-y-2">
+              {headerDifferentOddEven && (
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Pages impaires (1, 3, 5...)
+                </label>
+              )}
+              <textarea
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Saisir le contenu de l'en-tête..."
+                rows={3}
+                defaultValue={getContentText(headerContent)}
+                onChange={(e) => setHeaderState(e.target.value as unknown as SerializedEditorState)}
+              />
+            </div>
+
+            {/* Even pages - only shown when differentOddEven is enabled */}
+            {headerDifferentOddEven && (
+              <div className="space-y-2 mt-3">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Pages paires (2, 4, 6...)
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Saisir le contenu de l'en-tête pour les pages paires..."
+                  rows={3}
+                  defaultValue={headerContent?.evenPageContent ? getContentText({
+                    ...headerContent,
+                    left: headerContent.evenPageContent.left,
+                    center: headerContent.evenPageContent.center,
+                    right: headerContent.evenPageContent.right,
+                  }) : ''}
+                  onChange={(e) => setHeaderEvenState(e.target.value as unknown as SerializedEditorState)}
+                />
+              </div>
+            )}
+
+            <p className="text-xs text-gray-500 italic mt-2">
+              Éditeur simplifié pour test - les variables ne sont pas disponibles
+            </p>
           </section>
 
           {/* Special Sections Configuration */}
@@ -636,21 +515,70 @@ export function HeaderFooterEditor({
 
           {/* Footer Section */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Pied de page:</h3>
-            <div className="bg-blue-50 rounded-xl overflow-hidden border border-blue-100">
-              <LexicalComposer initialConfig={{ ...miniEditorConfig, namespace: 'FooterMiniEditor' }}>
-                <MiniToolbar />
-                <div className="p-4">
-                  <FooterPreview />
-                  <p className="text-xs text-gray-500 mt-2 italic">
-                    Utilisez + pour accéder aux éléments nécessaires
-                  </p>
-                </div>
-                <InitialContentPlugin content={footerContent} />
-                <EditorStatePlugin onChange={setFooterState} />
-                <HistoryPlugin />
-              </LexicalComposer>
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-sm font-medium text-gray-700">Pied de page:</label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={footerShowOnFirstPage}
+                    onChange={(e) => setFooterShowOnFirstPage(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Afficher sur la première page
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={footerDifferentOddEven}
+                    onChange={(e) => setFooterDifferentOddEven(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Différencier pages paires/impaires
+                </label>
+              </div>
             </div>
+
+            {/* Odd pages (or all pages if not differentiated) */}
+            <div className="space-y-2">
+              {footerDifferentOddEven && (
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Pages impaires (1, 3, 5...)
+                </label>
+              )}
+              <textarea
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Saisir le contenu du pied de page..."
+                rows={3}
+                defaultValue={getContentText(footerContent)}
+                onChange={(e) => setFooterState(e.target.value as unknown as SerializedEditorState)}
+              />
+            </div>
+
+            {/* Even pages - only shown when differentOddEven is enabled */}
+            {footerDifferentOddEven && (
+              <div className="space-y-2 mt-3">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Pages paires (2, 4, 6...)
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Saisir le contenu du pied de page pour les pages paires..."
+                  rows={3}
+                  defaultValue={footerContent?.evenPageContent ? getContentText({
+                    ...footerContent,
+                    left: footerContent.evenPageContent.left,
+                    center: footerContent.evenPageContent.center,
+                    right: footerContent.evenPageContent.right,
+                  }) : ''}
+                  onChange={(e) => setFooterEvenState(e.target.value as unknown as SerializedEditorState)}
+                />
+              </div>
+            )}
+
+            <p className="text-xs text-gray-500 italic mt-2">
+              Éditeur simplifié pour test - les variables ne sont pas disponibles
+            </p>
           </section>
 
           {/* Propagation Section - Only show when editing default (no folioId) and there are overrides */}
