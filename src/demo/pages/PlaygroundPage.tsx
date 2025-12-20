@@ -2,8 +2,8 @@
  * PlaygroundPage - Editor Playground with API Documentation
  * Demonstrates all editor features and available APIs
  */
-import { useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Home,
   Code,
@@ -26,6 +26,7 @@ import {
   FileDown,
   CheckCircle,
   History,
+  Share2,
 } from 'lucide-react';
 import type { EditorState, LexicalEditor } from 'lexical';
 import { CerteafilesEditor } from '../../components/Editor/CerteafilesEditor';
@@ -578,16 +579,41 @@ function APICategorySection({ category }: { category: APICategory }) {
 }
 
 /**
+ * Generate a short unique document ID
+ */
+function generateDocumentId(): string {
+  return `doc-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
+}
+
+/**
  * PlaygroundPage - Main component
  */
 export function PlaygroundPage() {
+  // URL search params for document ID and collaboration
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Get or generate document ID from URL
+  const documentId = useMemo(() => {
+    const urlDocId = searchParams.get('docId');
+    if (urlDocId) return urlDocId;
+    // Generate a new ID if not in URL
+    return generateDocumentId();
+  }, [searchParams]);
+
+  // Room ID for collaboration (based on document ID)
+  const collaborationRoomId = useMemo(() => {
+    return `certeafiles-${documentId}`;
+  }, [documentId]);
+
   // Editor state
   const [orientation, setOrientation] = useState<Orientation>('portrait');
   const [zoom, setZoom] = useState(0.65);
   const [showToolbar, setShowToolbar] = useState(true);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
-  // Collaboration toggle - now enabled with fresh server state
-  const [enableCollaboration, setEnableCollaboration] = useState(false);
+  // Collaboration toggle - enabled when docId is in URL
+  const [enableCollaboration, setEnableCollaboration] = useState(() => {
+    return searchParams.has('docId');
+  });
   const [editable, setEditable] = useState(true);
   const [editorKey, setEditorKey] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -597,9 +623,32 @@ export function PlaygroundPage() {
   const [showFolioPanel, setShowFolioPanel] = useState(false);
   const [showPagination, setShowPagination] = useState(true);
   const [showStatusBar, setShowStatusBar] = useState(true);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Track changes store
   const { trackingEnabled, toggleTracking, documentValidated, toggleDocumentValidated } = useRevisionStore();
+
+  // Update URL when collaboration is enabled
+  useEffect(() => {
+    if (enableCollaboration && !searchParams.has('docId')) {
+      setSearchParams({ docId: documentId });
+    }
+  }, [enableCollaboration, documentId, searchParams, setSearchParams]);
+
+  // Generate shareable link
+  const shareableLink = useMemo(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('docId', documentId);
+    return url.toString();
+  }, [documentId]);
+
+  // Copy link to clipboard
+  const handleCopyLink = useCallback(() => {
+    navigator.clipboard.writeText(shareableLink).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }, [shareableLink]);
 
   // Folio thumbnails
   const { thumbnails, isLoading: isLoadingThumbnails, progress: thumbnailProgress } = useFolioThumbnails();
@@ -659,9 +708,9 @@ export function PlaygroundPage() {
     }
   }, []);
 
-  // Collaboration
+  // Collaboration - uses the document-specific room ID
   const collaboration = useCollaboration({
-    roomId: 'certeafiles-playground',
+    roomId: collaborationRoomId,
     userName: 'Playground User',
   });
 
@@ -1004,6 +1053,31 @@ export function PlaygroundPage() {
               <span className="text-xs text-slate-600">Collab</span>
             </label>
 
+            {/* Share button - visible when collaboration is enabled */}
+            {enableCollaboration && (
+              <button
+                onClick={handleCopyLink}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
+                  linkCopied
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                }`}
+                title={shareableLink}
+              >
+                {linkCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    Lien copié !
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-3.5 h-3.5" />
+                    Partager
+                  </>
+                )}
+              </button>
+            )}
+
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -1013,8 +1087,6 @@ export function PlaygroundPage() {
               />
               <span className="text-xs text-slate-600">Editable</span>
             </label>
-
-            <div className="h-4 w-px bg-slate-200" />
 
             <div className="h-4 w-px bg-slate-200" />
 
@@ -1094,7 +1166,7 @@ export function PlaygroundPage() {
                 showStatusBar={showStatusBar}
                 showCommentPanel={showCommentPanel}
                 enableCollaboration={enableCollaboration}
-                collaborationRoomId="certeafiles-playground"
+                collaborationRoomId={collaborationRoomId}
                 collaborationUser={{
                   id: collaboration.currentUser.id,
                   name: collaboration.currentUser.name,
