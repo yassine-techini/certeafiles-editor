@@ -586,9 +586,9 @@ export function PlaygroundPage() {
   const [zoom, setZoom] = useState(0.65);
   const [showToolbar, setShowToolbar] = useState(true);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
-  // Collaboration is enabled by default at startup
-  // Note: Cannot be toggled dynamically as it causes Yjs sync issues
-  const [enableCollaboration] = useState(true);
+  // Collaboration is DISABLED - the WebSocket server has corrupted state
+  // TODO: Fix the Yjs server to properly handle initial document state
+  const [enableCollaboration] = useState(false);
   const [editable, setEditable] = useState(true);
   const [editorKey, setEditorKey] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -995,15 +995,7 @@ export function PlaygroundPage() {
               <span className="text-xs text-slate-600">Comments</span>
             </label>
 
-            <label className="flex items-center gap-2 cursor-not-allowed opacity-50" title="La collaboration doit être configurée au démarrage de l'éditeur">
-              <input
-                type="checkbox"
-                checked={enableCollaboration}
-                disabled
-                className="rounded"
-              />
-              <span className="text-xs text-slate-600">Collab</span>
-            </label>
+            {/* Collaboration checkbox removed - feature not ready for production */}
 
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1116,38 +1108,6 @@ export function PlaygroundPage() {
                   : 'Non enregistré'}
               </span>
             </div>
-
-            <span>|</span>
-
-            {/* Collaboration status */}
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  enableCollaboration
-                    ? collaboration.state.status === 'connected'
-                      ? 'bg-green-500'
-                      : collaboration.state.status === 'connecting'
-                      ? 'bg-yellow-500 animate-pulse'
-                      : 'bg-slate-400'
-                    : 'bg-slate-300'
-                }`}
-              />
-              <span>
-                {enableCollaboration
-                  ? collaboration.state.status === 'connected'
-                    ? 'Connecté'
-                    : collaboration.state.status === 'connecting'
-                    ? 'Connexion...'
-                    : 'Hors ligne'
-                  : 'Local'}
-              </span>
-            </div>
-            {enableCollaboration && collaboration.allUsers.length > 0 && (
-              <>
-                <span>|</span>
-                <span>{collaboration.allUsers.length} utilisateur(s)</span>
-              </>
-            )}
 
             <span>|</span>
 
