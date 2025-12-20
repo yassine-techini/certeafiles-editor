@@ -586,7 +586,9 @@ export function PlaygroundPage() {
   const [zoom, setZoom] = useState(0.65);
   const [showToolbar, setShowToolbar] = useState(true);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
-  const [enableCollaboration, setEnableCollaboration] = useState(false);
+  // Collaboration is disabled - enabling it dynamically causes content sync issues
+  // To use collaboration, it should be enabled from the start with a specific roomId
+  const [enableCollaboration] = useState(false);
   const [editable, setEditable] = useState(true);
   const [editorKey, setEditorKey] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -993,11 +995,11 @@ export function PlaygroundPage() {
               <span className="text-xs text-slate-600">Comments</span>
             </label>
 
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2 cursor-not-allowed opacity-50" title="La collaboration doit être configurée au démarrage de l'éditeur">
               <input
                 type="checkbox"
                 checked={enableCollaboration}
-                onChange={(e) => setEnableCollaboration(e.target.checked)}
+                disabled
                 className="rounded"
               />
               <span className="text-xs text-slate-600">Collab</span>
