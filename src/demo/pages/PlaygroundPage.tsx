@@ -34,6 +34,7 @@ import { FolioPanel } from '../../components/Folios';
 import { useCollaboration } from '../../hooks/useCollaboration';
 import { useFolioThumbnails } from '../../hooks/useFolioThumbnails';
 import { useRevisionStore } from '../../stores/revisionStore';
+import { useFolioStore } from '../../stores/folioStore';
 import { DOCUMENT_TEMPLATES, getDocumentContent } from '../data/sampleDocuments';
 import { RICH_DOCUMENTS, getRichDocument } from '../data/richDocuments';
 import { MASSIVE_DOCUMENTS, getMassiveDocument } from '../data/massiveDocumentGenerator';
@@ -605,8 +606,11 @@ export function PlaygroundPage() {
   // Loading state for massive documents
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Handle document selection
+  // Handle document selection - clears folioStore first to prevent header/footer chaos
   const handleDocumentChange = useCallback((docId: string) => {
+    // Clear the folio store first to prevent stale data
+    useFolioStore.getState().clear();
+
     setSelectedDocument(docId);
     if (docId) {
       // Check if it's a massive document first
@@ -619,7 +623,10 @@ export function PlaygroundPage() {
             const generatedState = massiveDoc.generator();
             setInitialEditorState(generatedState);
             setInitialContent('');
-            setEditorKey((k) => k + 1);
+            // Small delay after clearing store before remount
+            setTimeout(() => {
+              setEditorKey((k) => k + 1);
+            }, 50);
           } finally {
             setIsGenerating(false);
           }
@@ -638,11 +645,16 @@ export function PlaygroundPage() {
         setInitialContent(content);
         setInitialEditorState(undefined);
       }
-      setEditorKey((k) => k + 1); // Force editor re-mount with new content
+      // Small delay after clearing store before remount
+      setTimeout(() => {
+        setEditorKey((k) => k + 1);
+      }, 50);
     } else {
       setInitialContent('');
       setInitialEditorState(undefined);
-      setEditorKey((k) => k + 1);
+      setTimeout(() => {
+        setEditorKey((k) => k + 1);
+      }, 50);
     }
   }, []);
 
@@ -706,9 +718,18 @@ export function PlaygroundPage() {
     console.log('[Playground] DOCX export - directing user to toolbar');
   }, []);
 
-  // Reset editor
+  // Reset editor - clear stores first to prevent header/footer chaos
   const handleResetEditor = useCallback(() => {
-    setEditorKey((k) => k + 1);
+    // Clear the folio store to prevent stale data from causing header/footer issues
+    useFolioStore.getState().clear();
+    // Reset document selection and content
+    setSelectedDocument('');
+    setInitialContent('');
+    setInitialEditorState(undefined);
+    // Small delay to let the stores clear before remounting
+    setTimeout(() => {
+      setEditorKey((k) => k + 1);
+    }, 50);
   }, []);
 
   return (
