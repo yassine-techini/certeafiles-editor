@@ -2,7 +2,7 @@
  * HeaderFooterPlugin - Inject headers/footers into folios
  * Per Constitution Section 4.2 - Headers and Footers
  */
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $getRoot,
@@ -32,6 +32,11 @@ export interface HeaderFooterPluginProps {
   syncWithStore?: boolean;
 }
 
+// Debounce delay for sync operations (ms)
+const SYNC_DEBOUNCE_DELAY = 500;
+// Delay after initial load before allowing sync
+const INITIAL_LOAD_DELAY = 1000;
+
 /**
  * HeaderFooterPlugin - Manages header/footer injection and synchronization
  */
@@ -40,6 +45,12 @@ export function HeaderFooterPlugin({
   syncWithStore = true,
 }: HeaderFooterPluginProps): null {
   const [editor] = useLexicalComposerContext();
+
+  // Refs for debouncing and preventing race conditions
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSyncingRef = useRef(false);
+  const isInitializedRef = useRef(false);
+  const lastFolioCountRef = useRef(0);
 
   // Get store state
   const getHeaderForFolio = useHeaderFooterStore((state) => state.getHeaderForFolio);
@@ -244,14 +255,22 @@ export function HeaderFooterPlugin({
   );
 
   /**
-   * Sync all headers/footers with store
+   * Internal sync function - performs the actual sync
    */
-  const syncAllHeadersFooters = useCallback(() => {
+  const performSync = useCallback(() => {
     // Skip if a modal is open
     if (isModalCurrentlyOpen()) {
       console.log('[HeaderFooterPlugin] Skipping sync - modal is open');
       return;
     }
+
+    // Skip if already syncing
+    if (isSyncingRef.current) {
+      console.log('[HeaderFooterPlugin] Skipping sync - already syncing');
+      return;
+    }
+
+    isSyncingRef.current = true;
 
     editor.update(
       () => {
@@ -261,22 +280,92 @@ export function HeaderFooterPlugin({
 
         if (totalPages === 0) {
           console.log('[HeaderFooterPlugin] No folios found, skipping sync');
+          isSyncingRef.current = false;
           return;
         }
 
+        // Check if document is still loading (folio count changing rapidly)
+        if (lastFolioCountRef.current > 0 && Math.abs(totalPages - lastFolioCountRef.current) > 5) {
+          console.log('[HeaderFooterPlugin] Document loading detected, deferring sync');
+          isSyncingRef.current = false;
+          return;
+        }
+
+        lastFolioCountRef.current = totalPages;
+
         folioNodes.forEach((folioNode, index) => {
           const pageNumber = index + 1;
+
+          // Check if folio already has header/footer to avoid duplicates
+          const children = folioNode.getChildren();
+          const existingHeaders = children.filter((child) => $isHeaderNode(child));
+          const existingFooters = children.filter((child) => $isFooterNode(child));
+
+          // Remove duplicate headers (keep first)
+          if (existingHeaders.length > 1) {
+            existingHeaders.slice(1).forEach((h) => h.remove());
+          }
+
+          // Remove duplicate footers (keep first)
+          if (existingFooters.length > 1) {
+            existingFooters.slice(1).forEach((f) => f.remove());
+          }
+
           injectHeader(folioNode, pageNumber, totalPages);
           injectFooter(folioNode, pageNumber, totalPages);
         });
 
         console.log('[HeaderFooterPlugin] Synced headers/footers for', folioNodes.length, 'folios');
+        isSyncingRef.current = false;
       },
       { tag: 'header-footer-sync', discrete: true }
     );
+
+    // Safety: reset syncing flag after a timeout in case update doesn't complete
+    setTimeout(() => {
+      isSyncingRef.current = false;
+    }, 100);
   }, [editor, injectHeader, injectFooter]);
 
-  // Initial injection
+  /**
+   * Debounced sync function - prevents rapid consecutive syncs
+   */
+  const syncAllHeadersFooters = useCallback(() => {
+    // Cancel any pending sync
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+
+    // Schedule new sync with debounce
+    syncTimeoutRef.current = setTimeout(() => {
+      performSync();
+      syncTimeoutRef.current = null;
+    }, SYNC_DEBOUNCE_DELAY);
+  }, [performSync]);
+
+  /**
+   * Immediate sync (for initial load only)
+   */
+  const syncImmediate = useCallback(() => {
+    // Cancel any pending debounced sync
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+    performSync();
+  }, [performSync]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Initial injection - wait for document to be fully loaded
   useEffect(() => {
     if (!autoInject) return;
 
@@ -284,18 +373,21 @@ export function HeaderFooterPlugin({
     const unsubscribe = useHeaderFooterStore.subscribe(
       (state) => state.defaultHeaderId,
       (defaultHeaderId) => {
-        if (defaultHeaderId) {
-          // Small delay to ensure folios are ready
-          setTimeout(syncAllHeadersFooters, 100);
+        if (defaultHeaderId && !isInitializedRef.current) {
+          // Wait for document to stabilize before initial sync
+          setTimeout(() => {
+            isInitializedRef.current = true;
+            syncImmediate();
+          }, INITIAL_LOAD_DELAY);
         }
       },
       { fireImmediately: true }
     );
 
     return unsubscribe;
-  }, [autoInject, syncAllHeadersFooters]);
+  }, [autoInject, syncImmediate]);
 
-  // Sync when store changes
+  // Sync when store changes (only after initialization)
   useEffect(() => {
     if (!syncWithStore) return;
 
@@ -307,7 +399,10 @@ export function HeaderFooterPlugin({
         defaultHeaderId: state.defaultHeaderId,
       }),
       () => {
-        syncAllHeadersFooters();
+        // Only sync after initialization
+        if (isInitializedRef.current) {
+          syncAllHeadersFooters();
+        }
       }
     );
 
@@ -318,7 +413,10 @@ export function HeaderFooterPlugin({
         defaultFooterId: state.defaultFooterId,
       }),
       () => {
-        syncAllHeadersFooters();
+        // Only sync after initialization
+        if (isInitializedRef.current) {
+          syncAllHeadersFooters();
+        }
       }
     );
 
@@ -328,26 +426,38 @@ export function HeaderFooterPlugin({
     };
   }, [syncWithStore, syncAllHeadersFooters]);
 
-  // Sync when folios change
+  // Sync when folios change (only after initialization, and only for significant changes)
   useEffect(() => {
+    let previousSize = 0;
+
     const unsubscribe = useFolioStore.subscribe(
       (state) => state.folios.size,
-      () => {
-        syncAllHeadersFooters();
+      (size) => {
+        // Only sync after initialization and if this is a single folio add/remove
+        if (isInitializedRef.current && previousSize > 0 && Math.abs(size - previousSize) <= 2) {
+          syncAllHeadersFooters();
+        }
+        previousSize = size;
       }
     );
 
     return unsubscribe;
   }, [syncAllHeadersFooters]);
 
-  // Listen for editor updates to inject headers/footers into new folios
+  // Listen for editor updates - disabled during loading to prevent chaos
   useEffect(() => {
     return editor.registerUpdateListener(({ tags }) => {
+      // Skip if not initialized
+      if (!isInitializedRef.current) return;
+
       // Skip if this is from our own update
       if (tags.has('header-footer-sync')) return;
 
       // Skip if modal is open
       if (isModalCurrentlyOpen()) return;
+
+      // Skip if currently syncing
+      if (isSyncingRef.current) return;
 
       editor.getEditorState().read(() => {
         const root = $getRoot();
@@ -369,7 +479,8 @@ export function HeaderFooterPlugin({
         });
 
         if (needsSync && !isModalCurrentlyOpen()) {
-          setTimeout(syncAllHeadersFooters, 50);
+          // Use debounced sync
+          syncAllHeadersFooters();
         }
       });
     });
