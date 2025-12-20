@@ -586,9 +586,9 @@ export function PlaygroundPage() {
   const [zoom, setZoom] = useState(0.65);
   const [showToolbar, setShowToolbar] = useState(true);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
-  // Collaboration is disabled - enabling it dynamically causes content sync issues
-  // To use collaboration, it should be enabled from the start with a specific roomId
-  const [enableCollaboration] = useState(false);
+  // Collaboration is enabled by default at startup
+  // Note: Cannot be toggled dynamically as it causes Yjs sync issues
+  const [enableCollaboration] = useState(true);
   const [editable, setEditable] = useState(true);
   const [editorKey, setEditorKey] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
