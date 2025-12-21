@@ -14,12 +14,11 @@ import type {
 } from 'lexical';
 import {
   $applyNodeReplacement,
-  $createParagraphNode,
-  $createTextNode,
   ElementNode,
 } from 'lexical';
 import { A4_CONSTANTS } from '../utils/a4-constants';
 import { DEFAULT_HEADER_HEIGHT } from '../types/headerFooter';
+import { CSS_CLASSES } from '../core/constants';
 
 /**
  * Payload for creating a HeaderNode
@@ -164,6 +163,7 @@ export class HeaderNode extends ElementNode {
   override createDOM(config: EditorConfig): HTMLElement {
     const header = document.createElement('header');
     header.setAttribute('data-header-folio-id', this.__folioId);
+    header.setAttribute('data-header-node', 'true');
     if (this.__contentId) {
       header.setAttribute('data-header-content-id', this.__contentId);
     }
@@ -171,7 +171,7 @@ export class HeaderNode extends ElementNode {
     header.setAttribute('data-header-height', String(this.__height));
 
     // Base classes
-    header.className = 'folio-header';
+    header.className = CSS_CLASSES.FOLIO_HEADER;
 
     // Apply theme class if available
     const theme = config.theme;
@@ -179,19 +179,30 @@ export class HeaderNode extends ElementNode {
       header.className += ` ${theme.header}`;
     }
 
-    // Set dimensions and positioning - table-based structured header
+    // CRITICAL: Make header non-editable - it's a protected zone
+    // Users must edit headers through the Header/Footer popup dialog
+    header.contentEditable = 'false';
+    header.style.userSelect = 'none';
+    header.style.cursor = 'default';
+
+    // Additional protection: prevent selection leaking into header
+    header.setAttribute('data-lexical-non-selectable', 'true');
+    header.addEventListener('mousedown', (e) => e.preventDefault());
+    header.addEventListener('click', (e) => e.stopPropagation());
+
+    // Set dimensions - Flexbox item at top
     const heightPx = this.__height * A4_CONSTANTS.MM_TO_PX;
+
     header.style.height = `${heightPx}px`;
     header.style.minHeight = `${heightPx}px`;
-    header.style.flexShrink = '0'; // Don't shrink
+    header.style.flexShrink = '0';
     header.style.width = '100%';
     header.style.boxSizing = 'border-box';
     header.style.fontSize = '11px';
     header.style.color = '#374151';
-    header.style.border = '1px solid #d1d5db';
-    header.style.backgroundColor = '#ffffff';
-    header.style.marginTop = `${A4_CONSTANTS.MARGIN_TOP * A4_CONSTANTS.MM_TO_PX * 0.3}px`;
-    header.style.marginBottom = '12px';
+    header.style.border = '1px solid #e5e7eb';
+    header.style.borderBottom = '1px solid #d1d5db';
+    header.style.backgroundColor = '#f9fafb';
     header.style.display = 'table';
     header.style.tableLayout = 'fixed';
     header.style.borderCollapse = 'collapse';
@@ -267,6 +278,28 @@ export class HeaderNode extends ElementNode {
   override canIndent(): boolean {
     return false;
   }
+
+  // CRITICAL: Prevent selection/editing in header zone
+  // Header is read-only and can only be edited via the Header/Footer dialog
+  override canInsertTextBefore(): boolean {
+    return false;
+  }
+
+  override canInsertTextAfter(): boolean {
+    return false;
+  }
+
+  override excludeFromCopy(): boolean {
+    return true;
+  }
+
+  /**
+   * Always return false to indicate this node is not selected
+   * This helps prevent user from selecting header content
+   */
+  override isSelected(): boolean {
+    return false;
+  }
 }
 
 /**
@@ -282,10 +315,8 @@ export function $createHeaderNode(payload: HeaderPayload): HeaderNode {
     key
   );
 
-  // Add default content if empty
-  const paragraph = $createParagraphNode();
-  paragraph.append($createTextNode(''));
-  node.append(paragraph);
+  // Note: No initial paragraph - HeaderFooterPlugin.updateNodeContent() manages content
+  // This avoids contradictory editable paragraph inside non-editable zone
 
   return $applyNodeReplacement(node);
 }

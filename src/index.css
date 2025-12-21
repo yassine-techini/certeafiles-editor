@@ -642,12 +642,33 @@ body {
   box-shadow: 0 0 0 2px #3b82f6, 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
-/* Folio content area */
-.folio-page > p:first-child {
+/* Flexbox layout for folio pages */
+.folio-page {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Header at top - no shrink */
+.folio-header {
+  flex-shrink: 0 !important;
+}
+
+/* Footer at bottom - pushed down with margin-top: auto */
+.folio-footer {
+  margin-top: auto !important;
+  flex-shrink: 0 !important;
+}
+
+/* Content area - normal flow */
+.folio-page > *:not(.folio-header):not(.folio-footer) {
+  flex-shrink: 0;
+}
+
+.folio-page > p:first-of-type {
   margin-top: 0;
 }
 
-.folio-page > *:last-child {
+.folio-page > *:last-child:not(.folio-footer) {
   margin-bottom: 0;
 }
 
@@ -824,89 +845,96 @@ body {
   border-radius: 50%;
 }
 
-/* Header/Footer Styles - Design Specification */
+/* Header/Footer Styles - Design Specification (design1.png, design3.png) */
 .folio-header {
   display: table !important;
   table-layout: fixed !important;
   width: 100% !important;
   border-collapse: collapse !important;
   background-color: #ffffff !important;
-  border: 1px solid #d1d5db !important;
-  font-size: 10px !important;
+  border: 1px solid #000000 !important;
+  font-size: 11px !important;
   color: #374151 !important;
+  line-height: 1.4 !important;
 }
 
 .folio-header > p {
   display: table-cell !important;
   vertical-align: middle !important;
-  padding: 6px 10px !important;
-  border-right: 1px solid #d1d5db !important;
+  padding: 8px 12px !important;
+  border-right: 1px solid #000000 !important;
   margin: 0 !important;
-  width: 33.33% !important;
+  white-space: pre-line !important;
 }
 
+/* Left cell - Logo column (narrower) */
 .folio-header > p:first-child {
-  text-align: left !important;
+  width: 15% !important;
+  text-align: center !important;
   font-weight: 500 !important;
   color: #1f2937 !important;
 }
 
+/* Center cell - Document name (wider) */
 .folio-header > p:nth-child(2) {
+  width: 55% !important;
   text-align: center !important;
   font-weight: 600 !important;
   color: #111827 !important;
+  font-size: 12px !important;
 }
 
+/* Right cell - Metadata column */
 .folio-header > p:last-child {
-  text-align: right !important;
+  width: 30% !important;
+  text-align: left !important;
   border-right: none !important;
-  color: #6b7280 !important;
+  color: #374151 !important;
+  font-size: 10px !important;
 }
 
+/* Footer Styles */
 .folio-footer {
-  display: table !important;
-  table-layout: fixed !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
   width: 100% !important;
-  border-collapse: collapse !important;
-  background-color: #ffffff !important;
-  border: 1px solid #d1d5db !important;
+  background-color: transparent !important;
+  border: none !important;
   font-size: 10px !important;
   color: #6b7280 !important;
+  padding: 8px 0 !important;
 }
 
 .folio-footer > p {
-  display: table-cell !important;
-  vertical-align: middle !important;
-  padding: 6px 10px !important;
-  border-right: 1px solid #d1d5db !important;
-  margin: 0 !important;
-  width: 33.33% !important;
-}
-
-.folio-footer > p:first-child {
-  text-align: left !important;
-}
-
-.folio-footer > p:nth-child(2) {
+  display: block !important;
   text-align: center !important;
-  font-weight: 500 !important;
+  margin: 0 !important;
+  width: 100% !important;
 }
 
-.folio-footer > p:last-child {
-  text-align: right !important;
-  border-right: none !important;
+/* Header/Footer with logo placeholder - Company logo style */
+.folio-header > p:first-child {
+  position: relative !important;
 }
 
-/* Header/Footer with logo placeholder */
-.folio-header > p:first-child::before {
-  content: '';
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  border-radius: 3px;
-  margin-right: 8px;
-  vertical-align: middle;
+/* Logo placeholder - styled like design */
+.folio-header-logo {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 50px !important;
+  height: 50px !important;
+  background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%) !important;
+  border-radius: 8px !important;
+  margin: 0 auto !important;
+}
+
+.folio-header-logo::after {
+  content: 'company' !important;
+  font-size: 8px !important;
+  color: white !important;
+  text-transform: lowercase !important;
 }
 
 /* ============================================

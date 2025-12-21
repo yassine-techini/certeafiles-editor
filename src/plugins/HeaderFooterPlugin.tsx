@@ -24,6 +24,7 @@ import { useHeaderFooterStore } from '../stores/headerFooterStore';
 import { useFolioStore } from '../stores/folioStore';
 import type { HeaderFooterContent, HeaderFooterSegment } from '../types/headerFooter';
 import { isModalCurrentlyOpen } from '../utils/modalState';
+import { TIMING, UPDATE_TAGS } from '../core/constants';
 
 export interface HeaderFooterPluginProps {
   /** Whether to automatically inject headers/footers */
@@ -32,10 +33,9 @@ export interface HeaderFooterPluginProps {
   syncWithStore?: boolean;
 }
 
-// Debounce delay for sync operations (ms)
-const SYNC_DEBOUNCE_DELAY = 500;
-// Delay after initial load before allowing sync
-const INITIAL_LOAD_DELAY = 1000;
+// Use centralized timing constants
+const SYNC_DEBOUNCE_DELAY = TIMING.DEBOUNCE_SLOW;
+const INITIAL_LOAD_DELAY = TIMING.STABILIZATION_DELAY;
 
 /**
  * HeaderFooterPlugin - Manages header/footer injection and synchronization
@@ -94,6 +94,7 @@ export function HeaderFooterPlugin({
 
   /**
    * Update header/footer content in a node
+   * Creates a 3-column table structure for headers matching the design
    */
   const updateNodeContent = useCallback(
     (
@@ -114,9 +115,10 @@ export function HeaderFooterPlugin({
         return;
       }
 
-      // For header, create a table-like structured content
+      // For header, create a table-like structured content with 3 columns
       if (isHeader) {
         // Create three paragraphs for left, center, right columns
+        // Each paragraph represents a "cell" in our table-like header
         const leftPara = $createParagraphNode();
         const centerPara = $createParagraphNode();
         const rightPara = $createParagraphNode();
@@ -125,13 +127,17 @@ export function HeaderFooterPlugin({
         const leftText = createSegmentContent(content.left, pageNumber, totalPages) || '[Logo]';
         leftPara.append($createTextNode(leftText));
 
-        // Center: Document title and group
+        // Center: Group name + Document title (multi-line)
         const centerText = createSegmentContent(content.center, pageNumber, totalPages) || 'Document';
         centerPara.append($createTextNode(centerText));
 
-        // Right: Metadata (version, date, page)
-        const rightText = createSegmentContent(content.right, pageNumber, totalPages) ||
-          `Page ${pageNumber} / ${totalPages}`;
+        // Right: Metadata with page number replacement
+        let rightText = createSegmentContent(content.right, pageNumber, totalPages) ||
+          `Page ${pageNumber} sur ${totalPages}`;
+        // Replace placeholders in the text
+        rightText = rightText
+          .replace('{page}', String(pageNumber))
+          .replace('{total}', String(totalPages));
         rightPara.append($createTextNode(rightText));
 
         node.append(leftPara);
@@ -141,15 +147,21 @@ export function HeaderFooterPlugin({
         // For footer, simple centered content
         const container = $createParagraphNode();
         const leftText = createSegmentContent(content.left, pageNumber, totalPages);
-        const centerText = createSegmentContent(content.center, pageNumber, totalPages);
+        let centerText = createSegmentContent(content.center, pageNumber, totalPages);
         const rightText = createSegmentContent(content.right, pageNumber, totalPages);
 
         const parts: string[] = [];
         if (leftText) parts.push(leftText);
-        if (centerText) parts.push(centerText);
+        if (centerText) {
+          // Replace placeholders in footer text
+          centerText = centerText
+            .replace('{page}', String(pageNumber))
+            .replace('{total}', String(totalPages));
+          parts.push(centerText);
+        }
         if (rightText) parts.push(rightText);
 
-        const displayText = parts.join(' - ') || `Page ${pageNumber} / ${totalPages}`;
+        const displayText = parts.join(' - ') || `Page ${pageNumber} sur ${totalPages}`;
         container.append($createTextNode(displayText));
         node.append(container);
       }
@@ -196,10 +208,29 @@ export function HeaderFooterPlugin({
           folioNode.append(headerNode);
         }
       } else {
-        // Update existing header
-        headerNode.setContentId(contentId ?? null);
-        headerNode.setIsDefault(resolved.isDefault);
-        headerNode.setHeight(resolved.content.height);
+        // Check if header belongs to this folio (it might have been moved from another folio)
+        if (headerNode.getFolioId() !== folioId) {
+          console.log(`[HeaderFooterPlugin] Header belongs to different folio, recreating for page ${pageNumber}`);
+          headerNode.remove();
+          headerNode = $createHeaderNode({
+            folioId,
+            contentId: contentId ?? undefined,
+            isDefault: resolved.isDefault,
+            height: resolved.content.height,
+          });
+          // Insert at the beginning of folio
+          const firstChild = folioNode.getFirstChild();
+          if (firstChild) {
+            firstChild.insertBefore(headerNode);
+          } else {
+            folioNode.append(headerNode);
+          }
+        } else {
+          // Update existing header
+          headerNode.setContentId(contentId ?? null);
+          headerNode.setIsDefault(resolved.isDefault);
+          headerNode.setHeight(resolved.content.height);
+        }
       }
 
       // Update content
@@ -215,6 +246,8 @@ export function HeaderFooterPlugin({
     (folioNode: FolioNode, pageNumber: number, totalPages: number) => {
       const folioId = folioNode.getFolioId();
       const resolved = getFooterForFolio(folioId);
+
+      console.log(`[HeaderFooterPlugin] injectFooter for page ${pageNumber}, folioId: ${folioId}, hasContent: ${!!resolved.content}`);
 
       // Find existing footer in folio
       const children = folioNode.getChildren();
@@ -241,11 +274,25 @@ export function HeaderFooterPlugin({
 
         // Insert at the end of folio
         folioNode.append(footerNode);
+        console.log(`[HeaderFooterPlugin] Created new footer for page ${pageNumber}`);
       } else {
-        // Update existing footer
-        footerNode.setContentId(contentId ?? null);
-        footerNode.setIsDefault(resolved.isDefault);
-        footerNode.setHeight(resolved.content.height);
+        // Check if footer belongs to this folio (it might have been moved from another folio)
+        if (footerNode.getFolioId() !== folioId) {
+          console.log(`[HeaderFooterPlugin] Footer belongs to different folio, recreating for page ${pageNumber}`);
+          footerNode.remove();
+          footerNode = $createFooterNode({
+            folioId,
+            contentId: contentId ?? undefined,
+            isDefault: resolved.isDefault,
+            height: resolved.content.height,
+          });
+          folioNode.append(footerNode);
+        } else {
+          // Update existing footer
+          footerNode.setContentId(contentId ?? null);
+          footerNode.setIsDefault(resolved.isDefault);
+          footerNode.setHeight(resolved.content.height);
+        }
       }
 
       // Update content
@@ -318,7 +365,7 @@ export function HeaderFooterPlugin({
         console.log('[HeaderFooterPlugin] Synced headers/footers for', folioNodes.length, 'folios');
         isSyncingRef.current = false;
       },
-      { tag: 'header-footer-sync', discrete: true }
+      { tag: UPDATE_TAGS.HEADER_FOOTER_SYNC, discrete: true }
     );
 
     // Safety: reset syncing flag after a timeout in case update doesn't complete
@@ -451,7 +498,7 @@ export function HeaderFooterPlugin({
       if (!isInitializedRef.current) return;
 
       // Skip if this is from our own update
-      if (tags.has('header-footer-sync')) return;
+      if (tags.has(UPDATE_TAGS.HEADER_FOOTER_SYNC)) return;
 
       // Skip if modal is open
       if (isModalCurrentlyOpen()) return;

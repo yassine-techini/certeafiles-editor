@@ -1,6 +1,13 @@
 /**
  * FolioNode - ElementNode representing an A4 page/folio
  * Per Constitution Section 3.3 - Custom Nodes
+ *
+ * Architecture: FolioNode creates a DOM structure with 3 fixed zones:
+ * - folio-header-zone: Container for header content (injected by HeaderFooterPlugin)
+ * - folio-content-zone: Container for Lexical editable content
+ * - folio-footer-zone: Container for footer content (injected by HeaderFooterPlugin)
+ *
+ * This prevents overlapping issues as each zone has fixed, non-overlapping positions.
  */
 import type {
   DOMConversionMap,
@@ -20,6 +27,7 @@ import {
   ElementNode,
 } from 'lexical';
 import { A4_CONSTANTS, LANDSCAPE_CONSTANTS } from '../utils/a4-constants';
+import { CSS_CLASSES } from '../core/constants';
 import type { FolioOrientation } from '../types/folio';
 
 /**
@@ -185,7 +193,7 @@ export class FolioNode extends ElementNode {
     }
 
     // Base classes
-    div.className = 'folio-page';
+    div.className = CSS_CLASSES.FOLIO_PAGE;
 
     // Apply theme class if available
     const theme = config.theme;
@@ -193,28 +201,31 @@ export class FolioNode extends ElementNode {
       div.className += ` ${theme.folio}`;
     }
 
-    // Set A4 dimensions based on orientation - use fixed height to prevent overflow
+    // Set A4 dimensions based on orientation
     const dimensions = this.getDimensions();
     div.style.width = `${dimensions.width}px`;
     div.style.height = `${dimensions.height}px`;
     div.style.maxHeight = `${dimensions.height}px`;
+    // Store height as data attribute for AutoPaginationPlugin
+    div.setAttribute('data-folio-height', String(Math.round(dimensions.height)));
     div.style.backgroundColor = '#ffffff';
     div.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
     div.style.marginBottom = '24px';
     div.style.position = 'relative';
     div.style.overflow = 'hidden';
 
-    // Use flexbox for header-content-footer layout
+    // Use Flexbox for layout - vertical column
+    // HeaderNode uses flexShrink: 0 and stays at top
+    // FooterNode uses marginTop: auto and stays at bottom
+    // Content fills the middle
     div.style.display = 'flex';
     div.style.flexDirection = 'column';
+    div.style.boxSizing = 'border-box';
 
-    // Default padding (margins) - only horizontal, vertical handled by header/footer
-    const marginPx = A4_CONSTANTS.MARGIN_TOP * A4_CONSTANTS.MM_TO_PX;
+    // Padding for margins (applied to the folio container)
+    const marginPx = A4_CONSTANTS.MARGIN_LEFT * A4_CONSTANTS.MM_TO_PX;
     div.style.paddingLeft = `${marginPx}px`;
     div.style.paddingRight = `${marginPx}px`;
-    div.style.paddingTop = '0';
-    div.style.paddingBottom = '0';
-    div.style.boxSizing = 'border-box';
 
     return div;
   }

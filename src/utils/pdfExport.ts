@@ -54,6 +54,16 @@ export async function exportToPDF(options: PDFExportOptions = {}): Promise<void>
       onProgress(i + 1, folioElements.length);
     }
 
+    // Get orientation from data attribute
+    const orientation = folioElement.getAttribute('data-folio-orientation') === 'landscape'
+      ? 'landscape'
+      : 'portrait';
+    const isLandscape = orientation === 'landscape';
+
+    // Page dimensions based on orientation
+    const pageWidth = isLandscape ? pdfHeight : pdfWidth;
+    const pageHeight = isLandscape ? pdfWidth : pdfHeight;
+
     try {
       // Capture the folio as canvas
       const canvas = await html2canvas(folioElement, {
@@ -67,21 +77,26 @@ export async function exportToPDF(options: PDFExportOptions = {}): Promise<void>
       // Convert canvas to image
       const imgData = canvas.toDataURL('image/jpeg', quality);
 
-      // Calculate dimensions to fit A4
+      // Calculate dimensions to fit page
       const imgWidth = canvas.width;
       const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
 
       const scaledWidth = imgWidth * ratio;
       const scaledHeight = imgHeight * ratio;
 
       // Center the image on the page
-      const offsetX = (pdfWidth - scaledWidth) / 2;
-      const offsetY = (pdfHeight - scaledHeight) / 2;
+      const offsetX = (pageWidth - scaledWidth) / 2;
+      const offsetY = (pageHeight - scaledHeight) / 2;
 
-      // Add new page for subsequent folios
+      // Add new page for subsequent folios with correct orientation
       if (i > 0) {
-        pdf.addPage();
+        pdf.addPage('a4', orientation);
+      } else if (isLandscape) {
+        // First page: if landscape, we need to recreate the PDF with landscape
+        // jsPDF doesn't allow changing first page orientation, so we handle it differently
+        pdf.deletePage(1);
+        pdf.addPage('a4', 'landscape');
       }
 
       // Add the image to PDF
@@ -112,15 +127,22 @@ export async function exportFolioToPDF(
     return;
   }
 
-  // Create PDF
+  // Get orientation from data attribute
+  const orientation = folioElement.getAttribute('data-folio-orientation') === 'landscape'
+    ? 'landscape'
+    : 'portrait';
+  const isLandscape = orientation === 'landscape';
+
+  // Create PDF with correct orientation
   const pdf = new jsPDF({
-    orientation: 'portrait',
+    orientation,
     unit: 'mm',
     format: 'a4',
   });
 
-  const pdfWidth = A4_CONSTANTS.WIDTH_MM;
-  const pdfHeight = A4_CONSTANTS.HEIGHT_MM;
+  // Page dimensions based on orientation
+  const pageWidth = isLandscape ? A4_CONSTANTS.HEIGHT_MM : A4_CONSTANTS.WIDTH_MM;
+  const pageHeight = isLandscape ? A4_CONSTANTS.WIDTH_MM : A4_CONSTANTS.HEIGHT_MM;
 
   try {
     const canvas = await html2canvas(folioElement, {
@@ -134,12 +156,12 @@ export async function exportFolioToPDF(
     const imgData = canvas.toDataURL('image/jpeg', quality);
     const imgWidth = canvas.width;
     const imgHeight = canvas.height;
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+    const ratio = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
 
     const scaledWidth = imgWidth * ratio;
     const scaledHeight = imgHeight * ratio;
-    const offsetX = (pdfWidth - scaledWidth) / 2;
-    const offsetY = (pdfHeight - scaledHeight) / 2;
+    const offsetX = (pageWidth - scaledWidth) / 2;
+    const offsetY = (pageHeight - scaledHeight) / 2;
 
     pdf.addImage(imgData, 'JPEG', offsetX, offsetY, scaledWidth, scaledHeight);
     pdf.save(`${title}.pdf`);

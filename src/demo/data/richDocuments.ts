@@ -746,6 +746,155 @@ const BIOCOMPATIBILITY_STATE = createDocState([
 ]);
 
 /**
+ * Biological Evaluation Plan (BEP) - Per ISO 10993-1
+ * Based on design specification (design1.png, design3.png)
+ */
+const BEP_STATE = createDocState([
+  para([text("BIOLOGICAL EVALUATION PLAN (BEP)", 1)], "center"),
+  para([text("Conformément à ISO 10993-1:2018", 2)], "center"),
+  emptyPara(),
+  para([text("1. INTRODUCTION", 1)]),
+  para([text("This Biological Evaluation Plan (BEP) describes the systematic evaluation approach to demonstrate biocompatibility for the medical device described below. The plan is developed in accordance with ISO 10993-1:2018 and considers the nature of patient contact, duration, and intended clinical use.")]),
+  emptyPara(),
+  para([text("2. DEVICE IDENTIFICATION", 1)]),
+  table([
+    row([
+      cell([text("Parameter", 1)], 1),
+      cell([text("Value", 1)], 1),
+    ]),
+    row([
+      cell([text("Device Name")]),
+      cell([text("BLUEGloves Medical Examination Gloves", 1, "color: #3B82F6;")]),
+    ]),
+    row([
+      cell([text("Product Group")]),
+      cell([text("BLUEGloves")]),
+    ]),
+    row([
+      cell([text("Reference")]),
+      cell([text("TEMPBEP Ed. 1")]),
+    ]),
+    row([
+      cell([text("Classification MDR")]),
+      cell([text("Class I", 1, "color: #22C55E;")]),
+    ]),
+    row([
+      cell([text("Application Date")]),
+      cell([text("01/01/2025")]),
+    ]),
+  ]),
+  emptyPara(),
+  para([text("3. DEVICE CATEGORIZATION", 1)]),
+  para([text("Per ISO 10993-1:2018 Annex A, the device is categorized as follows:")]),
+  table([
+    row([
+      cell([text("Category", 1)], 1),
+      cell([text("Classification", 1)], 1),
+      cell([text("Justification", 1)], 1),
+    ]),
+    row([
+      cell([text("Nature of Contact")]),
+      cell([text("Surface device - intact skin")]),
+      cell([text("Glove covers hands, no mucous membrane contact")]),
+    ]),
+    row([
+      cell([text("Contact Duration")]),
+      cell([text("Limited (< 24 hours)", 1)]),
+      cell([text("Single-use examination gloves")]),
+    ]),
+    row([
+      cell([text("Material Type")]),
+      cell([text("Nitrile")]),
+      cell([text("Synthetic polymer, latex-free")]),
+    ]),
+  ]),
+  emptyPara(),
+  para([text("4. BIOLOGICAL ENDPOINTS EVALUATION", 1)]),
+  para([text("Based on the categorization above, the following biological endpoints are required per ISO 10993-1:2018 Table A.1:")]),
+  table([
+    row([
+      cell([text("Endpoint", 1)], 1),
+      cell([text("Required", 1)], 1),
+      cell([text("Test Standard", 1)], 1),
+      cell([text("Status", 1)], 1),
+    ]),
+    row([
+      cell([text("Cytotoxicity")]),
+      cell([text("Yes", 1)]),
+      cell([text("ISO 10993-5")]),
+      cell([text("PASS", 1, "color: #22C55E;")]),
+    ]),
+    row([
+      cell([text("Sensitization")]),
+      cell([text("Yes", 1)]),
+      cell([text("ISO 10993-10")]),
+      cell([text("PASS", 1, "color: #22C55E;")]),
+    ]),
+    row([
+      cell([text("Irritation")]),
+      cell([text("Yes", 1)]),
+      cell([text("ISO 10993-10/23")]),
+      cell([text("PASS", 1, "color: #22C55E;")]),
+    ]),
+    row([
+      cell([text("Acute Systemic Toxicity")]),
+      cell([text("No", 0, "color: #6B7280;")]),
+      cell([text("N/A")]),
+      cell([text("N/A", 0, "color: #6B7280;")]),
+    ]),
+    row([
+      cell([text("Subchronic Toxicity")]),
+      cell([text("No", 0, "color: #6B7280;")]),
+      cell([text("N/A")]),
+      cell([text("N/A", 0, "color: #6B7280;")]),
+    ]),
+  ]),
+  emptyPara(),
+  para([text("5. PRODUCTS CONCERNED", 1)]),
+  para([text("The following products are covered by this Biological Evaluation Plan:")]),
+  table([
+    row([
+      cell([text("Product Code", 1)], 1),
+      cell([text("Description", 1)], 1),
+      cell([text("Size Range", 1)], 1),
+    ]),
+    row([
+      cell([text("BG-NIT-100")]),
+      cell([text("BLUEGloves Nitrile Examination Glove - Powder Free")]),
+      cell([text("XS, S, M, L, XL")]),
+    ]),
+    row([
+      cell([text("BG-NIT-200")]),
+      cell([text("BLUEGloves Nitrile Examination Glove - Enhanced Grip")]),
+      cell([text("S, M, L, XL")]),
+    ]),
+  ]),
+  emptyPara(),
+  para([text("6. APPROVAL HISTORY", 1)]),
+  table([
+    row([
+      cell([text("Version", 1)], 1),
+      cell([text("Date", 1)], 1),
+      cell([text("Author", 1)], 1),
+      cell([text("Status", 1)], 1),
+    ]),
+    row([
+      cell([text("1.0")]),
+      cell([text("01/01/2025")]),
+      cell([text("Dr. Marie Dubois")]),
+      cell([text("Approved", 1, "color: #22C55E;")]),
+    ]),
+  ]),
+  emptyPara(),
+  para([text("7. CONCLUSION", 1)]),
+  para([
+    text("Based on the biological evaluation conducted in accordance with ISO 10993-1:2018, the BLUEGloves Medical Examination Gloves are "),
+    text("BIOCOMPATIBLE", 1, "color: #22C55E;"),
+    text(" for the intended clinical use as a surface device with limited contact to intact skin."),
+  ]),
+]);
+
+/**
  * Labeling Review (ISO 15223)
  */
 const LABELING_STATE = createDocState([
@@ -883,6 +1032,14 @@ export const RICH_DOCUMENTS: RichDocument[] = [
     category: "Étiquetage",
     color: "#EF4444",
     editorState: JSON.stringify(LABELING_STATE),
+  },
+  {
+    id: "rich-bep",
+    title: "Biological Evaluation Plan (BEP)",
+    description: "ISO 10993-1 plan d'évaluation biologique - BLUEGloves",
+    category: "Biocompatibilité",
+    color: "#0EA5E9",
+    editorState: JSON.stringify(BEP_STATE),
   },
 ];
 

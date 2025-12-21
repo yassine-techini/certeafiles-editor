@@ -14,12 +14,11 @@ import type {
 } from 'lexical';
 import {
   $applyNodeReplacement,
-  $createParagraphNode,
-  $createTextNode,
   ElementNode,
 } from 'lexical';
 import { A4_CONSTANTS } from '../utils/a4-constants';
 import { DEFAULT_FOOTER_HEIGHT } from '../types/headerFooter';
+import { CSS_CLASSES } from '../core/constants';
 
 /**
  * Payload for creating a FooterNode
@@ -164,6 +163,7 @@ export class FooterNode extends ElementNode {
   override createDOM(config: EditorConfig): HTMLElement {
     const footer = document.createElement('footer');
     footer.setAttribute('data-footer-folio-id', this.__folioId);
+    footer.setAttribute('data-footer-node', 'true');
     if (this.__contentId) {
       footer.setAttribute('data-footer-content-id', this.__contentId);
     }
@@ -171,7 +171,7 @@ export class FooterNode extends ElementNode {
     footer.setAttribute('data-footer-height', String(this.__height));
 
     // Base classes
-    footer.className = 'folio-footer';
+    footer.className = CSS_CLASSES.FOLIO_FOOTER;
 
     // Apply theme class if available
     const theme = config.theme;
@@ -179,23 +179,34 @@ export class FooterNode extends ElementNode {
       footer.className += ` ${theme.footer}`;
     }
 
-    // Set dimensions and positioning - fixed at bottom of folio
+    // CRITICAL: Make footer non-editable - it's a protected zone
+    // Users must edit footers through the Header/Footer popup dialog
+    footer.contentEditable = 'false';
+    footer.style.userSelect = 'none';
+    footer.style.cursor = 'default';
+
+    // Additional protection: prevent selection leaking into footer
+    footer.setAttribute('data-lexical-non-selectable', 'true');
+    footer.addEventListener('mousedown', (e) => e.preventDefault());
+    footer.addEventListener('click', (e) => e.stopPropagation());
+
+    // Set dimensions - Flexbox item pushed to bottom with margin-top: auto
     const heightPx = this.__height * A4_CONSTANTS.MM_TO_PX;
+
+    footer.style.marginTop = 'auto';
+    footer.style.flexShrink = '0';
     footer.style.height = `${heightPx}px`;
     footer.style.minHeight = `${heightPx}px`;
-    footer.style.flexShrink = '0'; // Don't shrink
-    footer.style.marginTop = 'auto'; // Push to bottom
     footer.style.width = '100%';
     footer.style.display = 'flex';
     footer.style.alignItems = 'center';
-    footer.style.justifyContent = 'space-between';
+    footer.style.justifyContent = 'center';
     footer.style.padding = '0 8px';
     footer.style.boxSizing = 'border-box';
     footer.style.fontSize = '10px';
     footer.style.color = '#6b7280';
-    footer.style.borderTop = '1px solid #e5e7eb';
-    footer.style.backgroundColor = '#fafafa';
-    footer.style.marginBottom = `${A4_CONSTANTS.MARGIN_BOTTOM * A4_CONSTANTS.MM_TO_PX * 0.5}px`;
+    footer.style.borderTop = '1px solid #d1d5db';
+    footer.style.backgroundColor = '#f9fafb';
 
     return footer;
   }
@@ -268,6 +279,28 @@ export class FooterNode extends ElementNode {
   override canIndent(): boolean {
     return false;
   }
+
+  // CRITICAL: Prevent selection/editing in footer zone
+  // Footer is read-only and can only be edited via the Header/Footer dialog
+  override canInsertTextBefore(): boolean {
+    return false;
+  }
+
+  override canInsertTextAfter(): boolean {
+    return false;
+  }
+
+  override excludeFromCopy(): boolean {
+    return true;
+  }
+
+  /**
+   * Always return false to indicate this node is not selected
+   * This helps prevent user from selecting footer content
+   */
+  override isSelected(): boolean {
+    return false;
+  }
 }
 
 /**
@@ -283,10 +316,8 @@ export function $createFooterNode(payload: FooterPayload): FooterNode {
     key
   );
 
-  // Add default content if empty
-  const paragraph = $createParagraphNode();
-  paragraph.append($createTextNode(''));
-  node.append(paragraph);
+  // Note: No initial paragraph - HeaderFooterPlugin.updateNodeContent() manages content
+  // This avoids contradictory editable paragraph inside non-editable zone
 
   return $applyNodeReplacement(node);
 }

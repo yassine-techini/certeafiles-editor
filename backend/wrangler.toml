@@ -1,0 +1,33 @@
+name = "certeafiles-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects
+[durable_objects]
+bindings = [
+  { name = "DOCUMENT_ROOM", class_name = "DocumentRoom" }
+]
+
+# Migrations for Durable Objects
+[[migrations]]
+tag = "v1"
+new_classes = ["DocumentRoom"]
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "certeafiles-db"
+database_id = "9600c88a-ac17-4d2b-8d1e-b4ae2b8e6dae"
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"
+CORS_ORIGIN = "https://certeafiles-editor.pages.dev"
+
+# Development environment
+[env.dev]
+name = "certeafiles-api-dev"
+[env.dev.vars]
+ENVIRONMENT = "development"
+CORS_ORIGIN = "*"

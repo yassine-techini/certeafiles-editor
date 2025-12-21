@@ -128,6 +128,7 @@ function EditorInner({
   initialTextContent,
   onContentLoaded,
   onChange,
+  onReady,
   showToolbar,
   showStatusBar,
   showCommentPanel,
@@ -149,6 +150,7 @@ function EditorInner({
   initialTextContent: string | undefined;
   onContentLoaded: (() => void) | undefined;
   onChange: ((editorState: EditorState, editor: LexicalEditor) => void) | undefined;
+  onReady: ((editor: LexicalEditor) => void) | undefined;
   showToolbar: boolean;
   showStatusBar: boolean;
   showCommentPanel: boolean;
@@ -164,6 +166,13 @@ function EditorInner({
   onCollaborationStateChange: ((state: CollaborationState) => void) | undefined;
 }): JSX.Element {
   const [editor] = useLexicalComposerContext();
+
+  // Call onReady when editor is available
+  useEffect(() => {
+    if (editor && onReady) {
+      onReady(editor);
+    }
+  }, [editor, onReady]);
 
   // Comment panel state
   const [isCommentPanelOpen, setIsCommentPanelOpen] = useState(showCommentPanel);
@@ -522,6 +531,7 @@ export function CerteafilesEditor({
   margins,
   placeholder = 'Start typing your document...',
   onChange,
+  onReady,
   className = '',
   showToolbar = true,
   showStatusBar = true,
@@ -540,10 +550,14 @@ export function CerteafilesEditor({
   // Create editor configuration
   const editorConfig = createEditorConfig({ editable });
 
-  // Add initial state if provided
-  const initialConfig = initialState
-    ? { ...editorConfig, editorState: initialState }
-    : editorConfig;
+  // IMPORTANT: When collaboration is enabled, editorState MUST be null
+  // so the collaboration plugin can manage the initial state from Yjs
+  // See: https://lexical.dev/docs/collaboration/react
+  const initialConfig = enableCollaboration
+    ? { ...editorConfig, editorState: null }
+    : initialState
+      ? { ...editorConfig, editorState: initialState }
+      : editorConfig;
 
   return (
     <LexicalComposer initialConfig={initialConfig}>
@@ -556,6 +570,7 @@ export function CerteafilesEditor({
           initialTextContent={initialTextContent}
           onContentLoaded={onContentLoaded}
           onChange={onChange}
+          onReady={onReady}
           showToolbar={showToolbar}
           showStatusBar={showStatusBar}
           showCommentPanel={showCommentPanel}

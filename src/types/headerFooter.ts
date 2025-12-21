@@ -148,20 +148,29 @@ export function createEmptyHeaderFooter(
 }
 
 /**
- * Create default header with document title
+ * Create default header with structured 3-column layout
+ * Based on design specification (design1.png, design3.png):
+ * - Left: Logo placeholder (company icon)
+ * - Center: Group name (BLUEGloves) + Document name (Biological Evaluation Plan)
+ * - Right: Reference (TEMPBEP Ed. 1), Application date, Page X to Y
  */
 export function createDefaultHeader(id: string): HeaderFooterContent {
   const content = createEmptyHeaderFooter(id, 'header');
-  content.center = createTextSegment('Document Title');
+  content.left = createTextSegment('🏢');  // Logo placeholder
+  content.center = createTextSegment('BLUEGloves\nBiological Evaluation Plan (BEP)');
+  content.right = createTextSegment('TEMPBEP Ed. 1\nApplication date:\n01/01/2025\nPage {page} to {total}');
+  content.height = 22; // Height to match design
   return content;
 }
 
 /**
- * Create default footer with page numbers
+ * Create default footer with document reference and name
+ * Based on design specification (design1.png)
  */
 export function createDefaultFooter(id: string): HeaderFooterContent {
   const content = createEmptyHeaderFooter(id, 'footer');
-  content.center = createPageNumberSegment();
+  content.center = createTextSegment('Référence versionnée de Document - Biological Evaluation plan (BEP)');
+  content.height = 10;
   return content;
 }
 

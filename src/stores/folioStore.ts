@@ -90,6 +90,13 @@ export interface FolioState {
   // Bulk actions
   clear: () => void;
   initialize: () => void;
+
+  // Insert multiple folios at a specific position (for PDF import)
+  insertFoliosAt: (foliosData: Array<{
+    id?: string;
+    orientation: FolioOrientation;
+    metadata?: FolioMetadata;
+  }>, afterIndex: number) => string[];
 }
 
 /**
@@ -533,6 +540,46 @@ export const useFolioStore = create<FolioState>()(
           sections: new Map(),
           activeFolioId: null,
         });
+      },
+
+      // Insert multiple folios at a specific position (for PDF import)
+      insertFoliosAt: (foliosData, afterIndex) => {
+        const { folios } = get();
+        const newFolios = new Map(folios);
+        const insertedIds: string[] = [];
+
+        // Shift all folios after the insertion point
+        newFolios.forEach((folio, fId) => {
+          if (folio.index > afterIndex) {
+            newFolios.set(fId, { ...folio, index: folio.index + foliosData.length });
+          }
+        });
+
+        // Insert new folios
+        foliosData.forEach((data, i) => {
+          const id = data.id || uuidv4();
+          const insertIndex = afterIndex + 1 + i;
+
+          const newFolio = createEmptyFolio(id, insertIndex, {
+            orientation: data.orientation,
+            sectionId: null,
+            margins: { ...DEFAULT_MARGINS },
+          });
+
+          // Add metadata if provided (for PDF page images)
+          if (data.metadata) {
+            newFolio.metadata = { ...newFolio.metadata, ...data.metadata };
+          }
+
+          newFolios.set(id, newFolio);
+          insertedIds.push(id);
+        });
+
+        console.log('[FolioStore] insertFoliosAt:', { afterIndex, count: foliosData.length, insertedIds });
+
+        // Set active folio to first inserted
+        set({ folios: newFolios, activeFolioId: insertedIds[0] || null });
+        return insertedIds;
       },
 
       // Initialize with folios based on URL demo parameter

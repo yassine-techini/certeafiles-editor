@@ -36,11 +36,15 @@ import { useCollaboration } from '../../hooks/useCollaboration';
 import { useFolioThumbnails } from '../../hooks/useFolioThumbnails';
 import { useRevisionStore } from '../../stores/revisionStore';
 import { useFolioStore } from '../../stores/folioStore';
+import { useHeaderFooterStore } from '../../stores/headerFooterStore';
 import { DOCUMENT_TEMPLATES, getDocumentContent } from '../data/sampleDocuments';
 import { RICH_DOCUMENTS, getRichDocument } from '../data/richDocuments';
 import { MASSIVE_DOCUMENTS, getMassiveDocument } from '../data/massiveDocumentGenerator';
 import type { Orientation } from '../../utils/a4-constants';
 import { exportToPDF } from '../../utils/pdfExport';
+import { downloadDocx } from '../../utils/docxExport';
+import { ImportDialog } from '../../components/Import/ImportDialog';
+import type { FolioData } from '../../services/pdf-import/FolioCreator';
 
 // Version info
 const VERSION = '1.0.0';
@@ -625,6 +629,10 @@ export function PlaygroundPage() {
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  // Import dialog state
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importInsertIndex, setImportInsertIndex] = useState<number | undefined>(undefined);
+
   // Track changes store
   const { trackingEnabled, toggleTracking, documentValidated, toggleDocumentValidated } = useRevisionStore();
 
@@ -656,10 +664,20 @@ export function PlaygroundPage() {
   // Loading state for massive documents
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Editor reference for exports
+  const [editorInstance, setEditorInstance] = useState<LexicalEditor | null>(null);
+
+  // Export loading states
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ current: number; total: number; type: 'pdf' | 'docx' } | null>(null);
+
   // Handle document selection - clears folioStore first to prevent header/footer chaos
   const handleDocumentChange = useCallback((docId: string) => {
     // Clear the folio store first to prevent stale data
     useFolioStore.getState().clear();
+
+    // Reset header/footer store with fresh default content (clears and reinitializes)
+    useHeaderFooterStore.getState().resetAllToTemplateDefaults();
 
     setSelectedDocument(docId);
     if (docId) {
@@ -729,44 +747,136 @@ export function PlaygroundPage() {
     console.log('[Playground] Document saved at', new Date().toISOString());
   }, []);
 
-  // Handle PDF import (simulated)
+  // Handle PDF import - open dialog with cursor position
   const handleImportPDF = useCallback(() => {
-    // Create a file input and trigger click
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.pdf';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        console.log('[Playground] Would import PDF:', file.name);
-        alert(`Import PDF: ${file.name}\n\nCette fonctionnalité nécessite une intégration backend.`);
-      }
-    };
-    input.click();
+    // Determine insertion position based on active folio
+    const { activeFolioId, getFoliosInOrder } = useFolioStore.getState();
+    const orderedFolios = getFoliosInOrder();
+
+    if (activeFolioId) {
+      // Find index of active folio
+      const activeFolioIndex = orderedFolios.findIndex(f => f.id === activeFolioId);
+      setImportInsertIndex(activeFolioIndex >= 0 ? activeFolioIndex : orderedFolios.length - 1);
+    } else {
+      // Insert at end if no active folio
+      setImportInsertIndex(orderedFolios.length - 1);
+    }
+
+    setIsImportDialogOpen(true);
   }, []);
 
-  // Handle PDF export
+  // Handle PDF folios created from import
+  const handlePdfFoliosCreated = useCallback((folios: FolioData[], insertAfterIndex: number) => {
+    const { insertFoliosAt, getFoliosInOrder } = useFolioStore.getState();
+    const existingFolios = getFoliosInOrder();
+
+    // If insertAfterIndex is -1 and we have no folios, insert at 0
+    // Otherwise, insert at the specified position or at the end
+    let effectiveIndex = insertAfterIndex;
+    if (effectiveIndex === -1) {
+      effectiveIndex = existingFolios.length > 0 ? existingFolios.length - 1 : -1;
+    }
+
+    console.log('[Playground] Creating', folios.length, 'folios after index', effectiveIndex);
+
+    // Create folio data for insertion - only include metadata if we have an image
+    const foliosToInsert = folios.map(folio => {
+      // Build metadata only if we have an image
+      const metadata = folio.imageDataUrl ? {
+        pdfPageImage: folio.imageDataUrl,
+        pdfPageNumber: folio.sourcePageNumber,
+        ...(folio.textContent ? { pdfTextContent: folio.textContent } : {}),
+      } : undefined;
+
+      return {
+        id: folio.id,
+        orientation: folio.orientation as 'portrait' | 'landscape',
+        ...(metadata ? { metadata } : {}),
+      };
+    });
+
+    // Insert all folios at once
+    const insertedIds = insertFoliosAt(foliosToInsert, effectiveIndex);
+    console.log('[Playground] Inserted folios:', insertedIds);
+
+    // Force editor refresh to show new folios
+    setEditorKey(prev => prev + 1);
+  }, []);
+
+  // Handle PDF export with loader
   const handleExportPDF = useCallback(async () => {
+    if (isExporting) return;
+
     try {
+      setIsExporting(true);
+      setExportProgress({ current: 0, total: 1, type: 'pdf' });
       console.log('[Playground] Exporting to PDF...');
+
       await exportToPDF({
         title: 'Document CerteaFiles',
         quality: 0.95,
+        onProgress: (current, total) => {
+          setExportProgress({ current, total, type: 'pdf' });
+        },
       });
+
       console.log('[Playground] PDF export complete');
     } catch (error) {
       console.error('[Playground] PDF export error:', error);
       alert('Erreur lors de l\'export PDF. Veuillez réessayer.');
+    } finally {
+      setIsExporting(false);
+      setExportProgress(null);
     }
-  }, []);
+  }, [isExporting]);
 
-  // Handle DOCX export - simplified version that alerts user
-  const handleExportDocx = useCallback(() => {
-    // DOCX export requires editor state access which is complex
-    // For now, show a message directing users to use the toolbar export
-    alert('Export DOCX: Cette fonctionnalité est disponible via le toolbar de l\'éditeur.\n\nCliquez sur le bouton export dans la barre d\'outils.');
-    console.log('[Playground] DOCX export - directing user to toolbar');
-  }, []);
+  // Handle DOCX export with loader
+  const handleExportDocx = useCallback(async () => {
+    if (isExporting) return;
+
+    if (!editorInstance) {
+      alert('Éditeur non prêt. Veuillez attendre le chargement complet.');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      setExportProgress({ current: 0, total: 100, type: 'docx' });
+      console.log('[Playground] Exporting to DOCX...');
+
+      const editorState = editorInstance.getEditorState();
+
+      await downloadDocx(
+        editorState,
+        'Document CerteaFiles.docx',
+        {
+          title: 'Document CerteaFiles',
+          author: 'CerteaFiles Editor',
+          subject: 'Document exporté',
+          description: 'Document créé avec CerteaFiles Editor',
+          keywords: ['certeafiles', 'document'],
+          includeHeaders: true,
+          includeFooters: true,
+          includeTrackChanges: true,
+          includeComments: true,
+          includeFootnotes: true,
+          resolveSlots: false,
+          pageRange: null,
+        },
+        (progress) => {
+          setExportProgress({ current: progress.percentage, total: 100, type: 'docx' });
+        }
+      );
+
+      console.log('[Playground] DOCX export complete');
+    } catch (error) {
+      console.error('[Playground] DOCX export error:', error);
+      alert('Erreur lors de l\'export DOCX. Veuillez réessayer.');
+    } finally {
+      setIsExporting(false);
+      setExportProgress(null);
+    }
+  }, [isExporting, editorInstance]);
 
   // Reset editor - clear stores first to prevent header/footer chaos
   const handleResetEditor = useCallback(() => {
@@ -839,20 +949,38 @@ export function PlaygroundPage() {
         {/* Export PDF Button */}
         <button
           onClick={handleExportPDF}
-          className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+          disabled={isExporting}
+          className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors ${
+            isExporting && exportProgress?.type === 'pdf'
+              ? 'bg-green-100 text-green-700 cursor-wait'
+              : 'text-slate-600 hover:text-slate-800 hover:bg-slate-100'
+          }`}
           title="Exporter en PDF"
         >
-          <FileDown className="w-4 h-4" />
+          {isExporting && exportProgress?.type === 'pdf' ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <FileDown className="w-4 h-4" />
+          )}
           <span className="hidden md:inline">Export PDF</span>
         </button>
 
         {/* Export DOCX Button */}
         <button
           onClick={handleExportDocx}
-          className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+          disabled={isExporting}
+          className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors ${
+            isExporting && exportProgress?.type === 'docx'
+              ? 'bg-green-100 text-green-700 cursor-wait'
+              : 'text-slate-600 hover:text-slate-800 hover:bg-slate-100'
+          }`}
           title="Exporter en DOCX"
         >
-          <FileDown className="w-4 h-4" />
+          {isExporting && exportProgress?.type === 'docx' ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <FileDown className="w-4 h-4" />
+          )}
           <span className="hidden md:inline">Export DOCX</span>
         </button>
 
@@ -1146,6 +1274,29 @@ export function PlaygroundPage() {
                 <p className="text-sm text-slate-500">Cela peut prendre quelques secondes pour les documents massifs</p>
               </div>
             )}
+            {isExporting && exportProgress && (
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                <div className="w-16 h-16 border-4 border-green-200 border-t-green-600 rounded-full animate-spin mb-4" />
+                <p className="text-lg font-semibold text-slate-700">
+                  Export {exportProgress.type.toUpperCase()} en cours...
+                </p>
+                <p className="text-sm text-slate-500">
+                  {exportProgress.type === 'pdf'
+                    ? `Page ${exportProgress.current} / ${exportProgress.total}`
+                    : `${exportProgress.current}%`}
+                </p>
+                <div className="w-64 h-2 bg-slate-200 rounded-full mt-4 overflow-hidden">
+                  <div
+                    className="h-full bg-green-500 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${exportProgress.type === 'pdf'
+                        ? (exportProgress.current / exportProgress.total) * 100
+                        : exportProgress.current}%`
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             <ErrorBoundary
               fallback={
                 <div className="flex items-center justify-center h-full text-red-500">
@@ -1159,6 +1310,7 @@ export function PlaygroundPage() {
                 {...(initialEditorState ? { initialState: initialEditorState } : {})}
                 {...(!initialEditorState && initialContent ? { initialTextContent: initialContent } : {})}
                 onChange={handleEditorChange}
+                onReady={setEditorInstance}
                 orientation={orientation}
                 zoom={zoom}
                 editable={editable}
@@ -1274,6 +1426,15 @@ export function PlaygroundPage() {
           </div>
         </aside>
       </main>
+
+      {/* Import Dialog */}
+      <ImportDialog
+        isOpen={isImportDialogOpen}
+        onClose={() => setIsImportDialogOpen(false)}
+        editor={editorInstance ?? undefined}
+        onFoliosCreated={handlePdfFoliosCreated}
+        insertAfterIndex={importInsertIndex}
+      />
     </div>
   );
 }

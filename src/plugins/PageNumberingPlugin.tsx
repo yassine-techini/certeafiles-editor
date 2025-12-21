@@ -8,6 +8,8 @@ import { $getRoot } from 'lexical';
 import { $getAllFolioNodes } from '../nodes/FolioNode';
 import { useFolioStore } from '../stores/folioStore';
 import { isModalCurrentlyOpen } from '../utils/modalState';
+import { PluginOrchestrator, PLUGIN_PRIORITIES } from '../core/PluginOrchestrator';
+import { TIMING, UPDATE_TAGS } from '../core/constants';
 
 /**
  * Section numbering configuration
@@ -38,7 +40,6 @@ export interface PageNumberingPluginProps {
 export function PageNumberingPlugin({
   sections,
   autoUpdate = true,
-  debounceMs = 100,
 }: PageNumberingPluginProps): null {
   const [editor] = useLexicalComposerContext();
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,22 +221,21 @@ export function PageNumberingPlugin({
           'folios'
         );
       },
-      { tag: 'page-numbering-update' }
+      { tag: UPDATE_TAGS.PAGE_NUMBER_SYNC }
     );
   }, [editor, calculatePageNumber]);
 
   /**
-   * Debounced update function
+   * Debounced update function - uses orchestrator for coordination
    */
   const debouncedUpdate = useCallback(() => {
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
-
-    updateTimeoutRef.current = setTimeout(() => {
-      updateAllPageNumbers();
-    }, debounceMs);
-  }, [updateAllPageNumbers, debounceMs]);
+    // Use orchestrator for coordinated updates
+    PluginOrchestrator.scheduleUpdate(
+      'page-numbering',
+      PLUGIN_PRIORITIES.PAGE_NUMBERING,
+      updateAllPageNumbers
+    );
+  }, [updateAllPageNumbers]);
 
   // Listen for editor changes
   useEffect(() => {
@@ -243,7 +243,7 @@ export function PageNumberingPlugin({
 
     return editor.registerUpdateListener(({ tags }) => {
       // Skip if this is our own update
-      if (tags.has('page-numbering-update')) return;
+      if (tags.has(UPDATE_TAGS.PAGE_NUMBER_SYNC)) return;
 
       debouncedUpdate();
     });
@@ -263,8 +263,8 @@ export function PageNumberingPlugin({
 
   // Initial update
   useEffect(() => {
-    // Small delay to ensure folios are ready
-    const timeout = setTimeout(updateAllPageNumbers, 200);
+    // Use centralized timing for initial delay
+    const timeout = setTimeout(updateAllPageNumbers, TIMING.INITIAL_LOAD_DELAY);
     return () => clearTimeout(timeout);
   }, [updateAllPageNumbers]);
 

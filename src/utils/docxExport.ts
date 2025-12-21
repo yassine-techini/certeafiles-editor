@@ -259,6 +259,22 @@ async function convertNodeToDocx(
       // If not including track changes, skip deleted content
       return null;
 
+    case 'folio':
+      // FolioNode is a container - recursively process its children
+      return convertNodesToDocx(getNodeChildren(node), options);
+
+    case 'header':
+      // HeaderNode content - process as regular content (headers are handled at section level)
+      return convertNodesToDocx(getNodeChildren(node), options);
+
+    case 'footer':
+      // FooterNode content - process as regular content (footers are handled at section level)
+      return convertNodesToDocx(getNodeChildren(node), options);
+
+    case 'root':
+      // Root node - process children
+      return convertNodesToDocx(getNodeChildren(node), options);
+
     default:
       // Unknown node type - try to extract text
       const defaultChildren = getNodeChildren(node);

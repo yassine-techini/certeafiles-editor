@@ -2,19 +2,12 @@
  * CollaborationPlugin - Real-time collaboration using Yjs and Cloudflare Durable Objects
  * Per Constitution Section 7 - Collaboration
  *
- * Uses @lexical/yjs for proper binding between Lexical and Yjs
+ * Uses the official Lexical CollaborationPlugin with a custom WebSocket provider
  */
-import { useEffect, useRef, useMemo } from 'react';
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import {
-  createBinding,
-  syncLexicalUpdateToYjs,
-  syncYjsChangesToLexical,
-  initLocalState,
-} from '@lexical/yjs';
-import type { Binding, Provider, ExcludedProperties } from '@lexical/yjs';
+import { useEffect, useMemo, useRef, useCallback } from 'react';
+import { CollaborationPlugin as LexicalCollaborationPlugin } from '@lexical/react/LexicalCollaborationPlugin';
+import type { Provider, ProviderAwareness, UserState } from '@lexical/yjs';
 import * as Y from 'yjs';
-import { Text as YText, YEvent } from 'yjs';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
@@ -33,12 +26,80 @@ const MessageType = {
 } as const;
 
 /**
+ * Wrapper for y-protocols Awareness that implements Lexical's ProviderAwareness interface
+ */
+class LexicalAwarenessWrapper implements ProviderAwareness {
+  private yjsAwareness: awarenessProtocol.Awareness;
+
+  constructor(yjsAwareness: awarenessProtocol.Awareness) {
+    this.yjsAwareness = yjsAwareness;
+  }
+
+  getLocalState(): UserState | null {
+    const state = this.yjsAwareness.getLocalState();
+    if (!state) return null;
+    // Convert to UserState format
+    return {
+      anchorPos: state.anchorPos ?? null,
+      color: state.color ?? state.user?.color ?? '#000000',
+      focusing: state.focusing ?? false,
+      focusPos: state.focusPos ?? null,
+      name: state.name ?? state.user?.name ?? 'Anonymous',
+      awarenessData: state.awarenessData ?? {},
+      ...state,
+    } as UserState;
+  }
+
+  getStates(): Map<number, UserState> {
+    const states = this.yjsAwareness.getStates();
+    const result = new Map<number, UserState>();
+    states.forEach((state, clientId) => {
+      result.set(clientId, {
+        anchorPos: state.anchorPos ?? null,
+        color: state.color ?? state.user?.color ?? '#000000',
+        focusing: state.focusing ?? false,
+        focusPos: state.focusPos ?? null,
+        name: state.name ?? state.user?.name ?? 'Anonymous',
+        awarenessData: state.awarenessData ?? {},
+        ...state,
+      } as UserState);
+    });
+    return result;
+  }
+
+  off(_type: 'update', cb: () => void): void {
+    this.yjsAwareness.off('update', cb);
+  }
+
+  on(_type: 'update', cb: () => void): void {
+    this.yjsAwareness.on('update', cb);
+  }
+
+  setLocalState(state: UserState): void {
+    // Need to call setLocalStateField for each field
+    Object.entries(state).forEach(([key, value]) => {
+      this.yjsAwareness.setLocalStateField(key, value);
+    });
+  }
+
+  setLocalStateField(field: string, value: unknown): void {
+    this.yjsAwareness.setLocalStateField(field, value);
+  }
+
+  // Expose underlying awareness for internal use
+  getYjsAwareness(): awarenessProtocol.Awareness {
+    return this.yjsAwareness;
+  }
+}
+
+/**
  * WebSocket Provider for Yjs - compatible with Provider interface for @lexical/yjs
  */
-class WebSocketProvider {
+class WebSocketProvider implements Provider {
   private ws: WebSocket | null = null;
   doc: Y.Doc;
-  awareness: awarenessProtocol.Awareness;
+  private _yjsAwareness: awarenessProtocol.Awareness;
+  awareness: ProviderAwareness;
   private serverUrl: string;
   private roomId: string;
   private user: CollaborationUser;
@@ -49,32 +110,41 @@ class WebSocketProvider {
   private maxReconnectAttempts = 10;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private connecting = false;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
   private statusCallbacks = new Set<(arg0: { status: string }) => void>();
   private syncCallbacks = new Set<(synced: boolean) => void>();
   private updateCallbacks = new Set<(arg0: unknown) => void>();
   private reloadCallbacks = new Set<(doc: Y.Doc) => void>();
 
-  constructor(roomId: string, serverUrl: string, user: CollaborationUser) {
+  constructor(roomId: string, serverUrl: string, user: CollaborationUser, doc: Y.Doc) {
     this.roomId = roomId;
     this.serverUrl = serverUrl;
     this.user = user;
-    this.doc = new Y.Doc();
-    this.awareness = new awarenessProtocol.Awareness(this.doc);
+    this.doc = doc;
+    this._yjsAwareness = new awarenessProtocol.Awareness(this.doc);
+    this.awareness = new LexicalAwarenessWrapper(this._yjsAwareness);
 
     // Set local user state
-    this.awareness.setLocalStateField('user', {
+    this._yjsAwareness.setLocalStateField('user', {
       id: user.id,
       name: user.name,
       color: user.color,
     });
 
-    console.log('[CollaborationProvider] Created for room:', roomId);
+    console.log('[WebSocketProvider] Created for room:', roomId, 'docClientId:', this.doc.clientID);
   }
 
-  // Provider interface implementation
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  on(type: string, cb: (...args: any[]) => void): void {
+  // Provider interface implementation - using function overloads
+  on(type: 'sync', cb: (isSynced: boolean) => void): void;
+  on(type: 'status', cb: (arg0: { status: string }) => void): void;
+  on(type: 'update', cb: (arg0: unknown) => void): void;
+  on(type: 'reload', cb: (doc: Y.Doc) => void): void;
+  on(
+    type: 'sync' | 'status' | 'update' | 'reload',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    cb: (...args: any[]) => void
+  ): void {
     if (type === 'sync') {
       this.syncCallbacks.add(cb as (synced: boolean) => void);
       // Immediately notify with current state
@@ -89,8 +159,15 @@ class WebSocketProvider {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  off(type: string, cb: (...args: any[]) => void): void {
+  off(type: 'sync', cb: (isSynced: boolean) => void): void;
+  off(type: 'status', cb: (arg0: { status: string }) => void): void;
+  off(type: 'update', cb: (arg0: unknown) => void): void;
+  off(type: 'reload', cb: (doc: Y.Doc) => void): void;
+  off(
+    type: 'sync' | 'status' | 'update' | 'reload',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    cb: (...args: any[]) => void
+  ): void {
     if (type === 'sync') {
       this.syncCallbacks.delete(cb as (synced: boolean) => void);
     } else if (type === 'status') {
@@ -103,27 +180,23 @@ class WebSocketProvider {
   }
 
   private notifyStatus(status: string): void {
-    console.log('[CollaborationProvider] Status:', status);
+    console.log('[WebSocketProvider] Status:', status);
     this.statusCallbacks.forEach((cb) => cb({ status }));
   }
 
   private notifySync(synced: boolean): void {
     this.synced = synced;
+    console.log('[WebSocketProvider] Synced:', synced);
     this.syncCallbacks.forEach((cb) => cb(synced));
   }
 
-  private notifyUpdate(update: unknown): void {
-    this.updateCallbacks.forEach((cb) => cb(update));
-  }
-
-  // Public getter for destroyed state
   get destroyed(): boolean {
     return this._destroyed;
   }
 
   connect(): void {
     if (this._destroyed || this.connecting || this._connected) {
-      console.log('[CollaborationProvider] Skipping connect:', {
+      console.log('[WebSocketProvider] Skipping connect:', {
         destroyed: this._destroyed,
         connecting: this.connecting,
         connected: this._connected
@@ -141,7 +214,7 @@ class WebSocketProvider {
     url.searchParams.set('userName', this.user.name);
     url.searchParams.set('userColor', this.user.color);
 
-    console.log('[CollaborationProvider] Connecting to:', url.toString());
+    console.log('[WebSocketProvider] Connecting to:', url.toString());
 
     try {
       const ws = new WebSocket(url.toString());
@@ -153,7 +226,7 @@ class WebSocketProvider {
           return;
         }
 
-        console.log('[CollaborationProvider] WebSocket connected');
+        console.log('[WebSocketProvider] WebSocket connected');
         this.ws = ws;
         this.connecting = false;
         this._connected = true;
@@ -166,9 +239,12 @@ class WebSocketProvider {
         // Send awareness
         this.sendAwareness();
 
-        // Set up listeners
+        // Set up listeners for ongoing updates
         this.doc.on('update', this.handleDocUpdate);
-        this.awareness.on('update', this.handleAwarenessUpdate);
+        this._yjsAwareness.on('update', this.handleAwarenessUpdate);
+
+        // Start keep-alive to prevent Cloudflare from closing the connection
+        this.startKeepAlive();
       };
 
       ws.onmessage = (event) => {
@@ -177,12 +253,16 @@ class WebSocketProvider {
       };
 
       ws.onclose = (event) => {
-        console.log('[CollaborationProvider] WebSocket closed:', event.code, event.reason);
+        console.log('[WebSocketProvider] WebSocket closed:', event.code, event.reason);
 
         if (this.ws === ws) {
           this.ws = null;
           this._connected = false;
           this.connecting = false;
+
+          // Remove listeners
+          this.doc.off('update', this.handleDocUpdate);
+          this._yjsAwareness.off('update', this.handleAwarenessUpdate);
 
           if (this.synced) {
             this.notifySync(false);
@@ -197,11 +277,11 @@ class WebSocketProvider {
       };
 
       ws.onerror = (error) => {
-        console.error('[CollaborationProvider] WebSocket error:', error);
+        console.error('[WebSocketProvider] WebSocket error:', error);
         this.connecting = false;
       };
     } catch (error) {
-      console.error('[CollaborationProvider] Connection error:', error);
+      console.error('[WebSocketProvider] Connection error:', error);
       this.connecting = false;
       this.notifyStatus('error');
       this.scheduleReconnect();
@@ -216,9 +296,9 @@ class WebSocketProvider {
       encoding.writeVarUint(encoder, MessageType.SYNC);
       syncProtocol.writeSyncStep1(encoder, this.doc);
       this.ws.send(encoding.toUint8Array(encoder));
-      console.log('[CollaborationProvider] Sent sync step 1');
+      console.log('[WebSocketProvider] Sent sync step 1');
     } catch (e) {
-      console.error('[CollaborationProvider] Error sending sync step 1:', e);
+      console.error('[WebSocketProvider] Error sending sync step 1:', e);
     }
   }
 
@@ -230,25 +310,42 @@ class WebSocketProvider {
       encoding.writeVarUint(encoder, MessageType.AWARENESS);
       encoding.writeVarUint8Array(
         encoder,
-        awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.doc.clientID])
+        awarenessProtocol.encodeAwarenessUpdate(this._yjsAwareness, [this.doc.clientID])
       );
       this.ws.send(encoding.toUint8Array(encoder));
-      console.log('[CollaborationProvider] Sent awareness');
+      console.log('[WebSocketProvider] Sent awareness');
     } catch (e) {
-      console.error('[CollaborationProvider] Error sending awareness:', e);
+      console.error('[WebSocketProvider] Error sending awareness:', e);
+    }
+  }
+
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+    // Send awareness update every 30 seconds to keep connection alive
+    this.keepAliveTimer = setInterval(() => {
+      if (this._connected && this.ws?.readyState === WebSocket.OPEN) {
+        this.sendAwareness();
+      }
+    }, 30000);
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
     }
   }
 
   private scheduleReconnect(): void {
     if (this._destroyed || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('[CollaborationProvider] Max reconnect attempts reached');
+      console.log('[WebSocketProvider] Max reconnect attempts reached');
       this.notifyStatus('error');
       return;
     }
 
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
-    console.log(`[CollaborationProvider] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    console.log(`[WebSocketProvider] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
 
     this.notifyStatus('reconnecting');
 
@@ -277,22 +374,23 @@ class WebSocketProvider {
 
         // Sync step 2 = synced
         if (syncMessageType === 1 && !this.synced) {
-          console.log('[CollaborationProvider] Synced with server');
+          console.log('[WebSocketProvider] Synced with server');
           this.notifySync(true);
         }
       } else if (messageType === MessageType.AWARENESS) {
         const update = decoding.readVarUint8Array(decoder);
-        awarenessProtocol.applyAwarenessUpdate(this.awareness, update, this);
+        awarenessProtocol.applyAwarenessUpdate(this._yjsAwareness, update, this);
       }
     } catch (e) {
-      console.error('[CollaborationProvider] Error handling message:', e);
+      console.error('[WebSocketProvider] Error handling message:', e);
     }
   };
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
     // Notify update listeners
-    this.notifyUpdate({ update, origin });
+    this.updateCallbacks.forEach((cb) => cb({ update, origin }));
 
+    // Don't send updates that originated from the server
     if (origin === this || this._destroyed || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     try {
@@ -300,8 +398,9 @@ class WebSocketProvider {
       encoding.writeVarUint(encoder, MessageType.SYNC);
       syncProtocol.writeUpdate(encoder, update);
       this.ws.send(encoding.toUint8Array(encoder));
+      console.log('[WebSocketProvider] Sent doc update, size:', update.length);
     } catch (e) {
-      console.error('[CollaborationProvider] Error sending doc update:', e);
+      console.error('[WebSocketProvider] Error sending doc update:', e);
     }
   };
 
@@ -319,17 +418,17 @@ class WebSocketProvider {
       encoding.writeVarUint(encoder, MessageType.AWARENESS);
       encoding.writeVarUint8Array(
         encoder,
-        awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed)
+        awarenessProtocol.encodeAwarenessUpdate(this._yjsAwareness, changed)
       );
       this.ws.send(encoding.toUint8Array(encoder));
     } catch (e) {
-      console.error('[CollaborationProvider] Error sending awareness update:', e);
+      console.error('[WebSocketProvider] Error sending awareness update:', e);
     }
   };
 
   getUsers(): CollaborationUser[] {
     const users: CollaborationUser[] = [];
-    this.awareness.getStates().forEach((state) => {
+    this._yjsAwareness.getStates().forEach((state) => {
       const s = state as { user?: CollaborationUser };
       if (s.user) users.push(s.user);
     });
@@ -345,7 +444,23 @@ class WebSocketProvider {
   }
 
   disconnect(): void {
-    console.log('[CollaborationProvider] Disconnecting');
+    // Check if provider is still in cache - if so, keep connection alive
+    // This handles React StrictMode where component unmounts then immediately remounts
+    const cachedProvider = providerCache.get(this.roomId);
+    const isCachedAndNotDestroyed = cachedProvider === this && !this._destroyed;
+
+    if (isCachedAndNotDestroyed) {
+      console.log('[WebSocketProvider] Disconnect called but provider is still cached, keeping connection alive');
+      return;
+    }
+
+    console.log('[WebSocketProvider] Disconnecting:', {
+      roomId: this.roomId,
+      destroyed: this._destroyed,
+      inCache: cachedProvider === this
+    });
+
+    this.stopKeepAlive();
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -353,7 +468,7 @@ class WebSocketProvider {
     }
 
     this.doc.off('update', this.handleDocUpdate);
-    this.awareness.off('update', this.handleAwarenessUpdate);
+    this._yjsAwareness.off('update', this.handleAwarenessUpdate);
 
     if (this.ws) {
       if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
@@ -363,14 +478,15 @@ class WebSocketProvider {
     }
     this._connected = false;
     this.connecting = false;
+    this.notifyStatus('disconnected');
   }
 
   destroy(): void {
-    console.log('[CollaborationProvider] Destroying');
+    console.log('[WebSocketProvider] Destroying');
     this._destroyed = true;
     this.disconnect();
-    this.awareness.destroy();
-    this.doc.destroy();
+    this._yjsAwareness.destroy();
+    // Don't destroy the doc - it's managed by Lexical
     this.statusCallbacks.clear();
     this.syncCallbacks.clear();
     this.updateCallbacks.clear();
@@ -378,30 +494,41 @@ class WebSocketProvider {
   }
 }
 
-// Singleton provider cache with cleanup support
+// Global provider cache - keyed by roomId
 const providerCache = new Map<string, WebSocketProvider>();
 
 /**
  * Get or create a WebSocket provider for a room
- * Includes proper cleanup of destroyed/stale providers
+ * IMPORTANT: We cache providers by roomId to handle React StrictMode double-mount
+ * But we MUST use the correct Y.Doc for the binding
  */
-function getOrCreateProvider(roomId: string, serverUrl: string, user: CollaborationUser): WebSocketProvider {
-  const key = `${roomId}`;
-  let provider = providerCache.get(key);
+function getOrCreateProvider(
+  roomId: string,
+  serverUrl: string,
+  user: CollaborationUser,
+  doc: Y.Doc
+): WebSocketProvider {
+  let provider = providerCache.get(roomId);
 
-  // Check if existing provider is still valid (not destroyed)
+  // Check if existing provider is still valid
   if (provider) {
-    // If the provider was destroyed, remove it from cache and create new one
-    if ((provider as unknown as { destroyed?: boolean }).destroyed) {
+    if (provider.destroyed) {
       console.log('[CollaborationPlugin] Removing destroyed provider from cache:', roomId);
-      providerCache.delete(key);
+      providerCache.delete(roomId);
+      provider = undefined;
+    } else if (provider.doc !== doc) {
+      // Doc changed - we need to create a new provider with the new doc
+      // Otherwise the Y.Doc binding won't work
+      console.log('[CollaborationPlugin] Doc changed for room:', roomId, 'destroying old provider and creating new one');
+      provider.destroy();
+      providerCache.delete(roomId);
       provider = undefined;
     }
   }
 
   if (!provider) {
-    provider = new WebSocketProvider(roomId, serverUrl, user);
-    providerCache.set(key, provider);
+    provider = new WebSocketProvider(roomId, serverUrl, user, doc);
+    providerCache.set(roomId, provider);
     console.log('[CollaborationPlugin] Created new provider for room:', roomId);
   } else {
     console.log('[CollaborationPlugin] Reusing existing provider for room:', roomId, 'connected:', provider.isConnected());
@@ -413,12 +540,11 @@ function getOrCreateProvider(roomId: string, serverUrl: string, user: Collaborat
  * Remove and destroy a provider from the cache
  */
 export function removeProvider(roomId: string): void {
-  const key = `${roomId}`;
-  const provider = providerCache.get(key);
+  const provider = providerCache.get(roomId);
   if (provider) {
     console.log('[CollaborationPlugin] Removing provider for room:', roomId);
     provider.destroy();
-    providerCache.delete(key);
+    providerCache.delete(roomId);
   }
 }
 
@@ -427,7 +553,7 @@ export function removeProvider(roomId: string): void {
  */
 export function clearAllProviders(): void {
   console.log('[CollaborationPlugin] Clearing all providers');
-  providerCache.forEach((provider, _key) => {
+  providerCache.forEach((provider) => {
     provider.destroy();
   });
   providerCache.clear();
@@ -465,11 +591,7 @@ export function CollaborationPlugin({
   onUsersChange,
   onStateChange,
   enabled = true,
-}: CollaborationPluginProps): null {
-  const [editor] = useLexicalComposerContext();
-  const providerRef = useRef<WebSocketProvider | null>(null);
-  const bindingRef = useRef<Binding | null>(null);
-
+}: CollaborationPluginProps): JSX.Element | null {
   const userId = user?.id || getUserId();
   const userName = user?.name || getUserName();
   const userColor = user?.color || getColorForUser(userId);
@@ -480,119 +602,69 @@ export function CollaborationPlugin({
     color: userColor,
   }), [userId, userName, userColor]);
 
+  // Stable callback refs
+  const onStatusChangeRef = useRef(onStatusChange);
+  const onSyncChangeRef = useRef(onSyncChange);
+  const onUsersChangeRef = useRef(onUsersChange);
+  const onStateChangeRef = useRef(onStateChange);
+
   useEffect(() => {
-    if (!enabled) {
-      console.log('[CollaborationPlugin] Disabled');
-      return;
+    onStatusChangeRef.current = onStatusChange;
+    onSyncChangeRef.current = onSyncChange;
+    onUsersChangeRef.current = onUsersChange;
+    onStateChangeRef.current = onStateChange;
+  }, [onStatusChange, onSyncChange, onUsersChange, onStateChange]);
+
+  // Provider factory for Lexical CollaborationPlugin
+  const providerFactory = useCallback((id: string, yjsDocMap: Map<string, Y.Doc>): Provider => {
+    console.log('[CollaborationPlugin] providerFactory called with id:', id);
+
+    // IMPORTANT: Get or create doc and put it in yjsDocMap BEFORE creating provider
+    let doc = yjsDocMap.get(id);
+    if (!doc) {
+      doc = new Y.Doc();
+      yjsDocMap.set(id, doc);
+      console.log('[CollaborationPlugin] Created new Y.Doc for id:', id);
+    } else {
+      console.log('[CollaborationPlugin] Reusing existing Y.Doc for id:', id);
     }
 
-    console.log('[CollaborationPlugin] Initializing for room:', roomId, 'serverUrl:', serverUrl);
+    const provider = getOrCreateProvider(roomId, serverUrl, collaborationUser, doc);
 
-    const provider = getOrCreateProvider(roomId, serverUrl, collaborationUser);
-    providerRef.current = provider;
-
-    // Create Lexical <-> Yjs binding
-    const yjsDocMap = new Map<string, Y.Doc>();
-    yjsDocMap.set('root', provider.doc);
-
-    // Create the binding between Lexical and Yjs
-    const excludedProperties: ExcludedProperties = new Map();
-    const binding = createBinding(
-      editor,
-      provider as unknown as Provider,
-      crypto.randomUUID(),
-      provider.doc,
-      yjsDocMap,
-      excludedProperties
-    );
-
-    bindingRef.current = binding;
-
-    // Initialize local state for cursor sync
-    initLocalState(
-      provider as unknown as Provider,
-      userName,
-      userColor,
-      true, // focusing
-      { id: userId }
-    );
-
-    // Set up status callbacks
+    // Set up callbacks
     const handleStatus = ({ status }: { status: string }) => {
-      console.log('[CollaborationPlugin] Status changed to:', status);
-      if (onStatusChange) {
-        onStatusChange(status as ConnectionStatus);
-      }
-      if (onStateChange) {
-        onStateChange({
-          status: status as ConnectionStatus,
-          isSynced: provider.isSynced(),
-          isOffline: !navigator.onLine,
-          users: provider.getUsers(),
-        });
-      }
+      console.log('[CollaborationPlugin] Status change:', status);
+      onStatusChangeRef.current?.(status as ConnectionStatus);
+      onStateChangeRef.current?.({
+        status: status as ConnectionStatus,
+        isSynced: provider.isSynced(),
+        isOffline: !navigator.onLine,
+        users: provider.getUsers(),
+      });
     };
 
     const handleSync = (synced: boolean) => {
-      console.log('[CollaborationPlugin] Sync:', synced);
-      if (onSyncChange) {
-        onSyncChange(synced);
-      }
+      console.log('[CollaborationPlugin] Sync change:', synced);
+      onSyncChangeRef.current?.(synced);
+    };
+
+    const handleAwarenessChange = () => {
+      const users = provider.getUsers();
+      onUsersChangeRef.current?.(users);
     };
 
     provider.on('status', handleStatus);
     provider.on('sync', handleSync);
-
-    // Set up users callback via awareness
-    const handleAwarenessChange = () => {
-      const users = provider.getUsers();
-      if (onUsersChange) {
-        onUsersChange(users);
-      }
-    };
     provider.awareness.on('update', handleAwarenessChange);
 
-    // Set up Lexical -> Yjs sync
-    const removeUpdateListener = editor.registerUpdateListener(
-      ({ editorState, dirtyElements, dirtyLeaves, prevEditorState, normalizedNodes, tags }) => {
-        if (tags.has('collaboration') || tags.has('historic')) {
-          return;
-        }
-        syncLexicalUpdateToYjs(
-          binding,
-          provider as unknown as Provider,
-          prevEditorState,
-          editorState,
-          dirtyElements,
-          dirtyLeaves,
-          normalizedNodes,
-          tags
-        );
-      }
-    );
-
-    // Set up Yjs -> Lexical sync
-    const yTextContent = provider.doc.get('root', Y.XmlText) as Y.XmlText;
-    const handleYjsObserve = (events: Array<YEvent<YText>>) => {
-      syncYjsChangesToLexical(binding, provider as unknown as Provider, events, false);
-    };
-    yTextContent.observeDeep(handleYjsObserve as (events: Array<Y.YEvent<Y.AbstractType<unknown>>>) => void);
-
-    // Connect immediately
+    // Connect AFTER setting up listeners
     if (!provider.isConnected()) {
+      console.log('[CollaborationPlugin] Connecting provider...');
       provider.connect();
     }
 
-    return () => {
-      console.log('[CollaborationPlugin] Cleaning up');
-      removeUpdateListener();
-      provider.off('status', handleStatus);
-      provider.off('sync', handleSync);
-      provider.awareness.off('update', handleAwarenessChange);
-      yTextContent.unobserveDeep(handleYjsObserve as (events: Array<Y.YEvent<Y.AbstractType<unknown>>>) => void);
-      bindingRef.current = null;
-    };
-  }, [editor, enabled, roomId, serverUrl, collaborationUser, userName, userColor, userId, onStatusChange, onSyncChange, onUsersChange, onStateChange]);
+    return provider;
+  }, [roomId, serverUrl, collaborationUser]);
 
   // Cleanup on page unload
   useEffect(() => {
@@ -603,7 +675,19 @@ export function CollaborationPlugin({
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  return null;
+  if (!enabled) {
+    return null;
+  }
+
+  return (
+    <LexicalCollaborationPlugin
+      id={roomId}
+      providerFactory={providerFactory}
+      shouldBootstrap={true}
+      username={userName}
+      cursorColor={userColor}
+    />
+  );
 }
 
 export default CollaborationPlugin;

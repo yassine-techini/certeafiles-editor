@@ -20,8 +20,9 @@ import {
   $createFolioNodeWithContent,
   $getAllFolioNodes,
 } from '../nodes/FolioNode';
-import { useFolioStore } from '../stores/folioStore';
 import { isModalCurrentlyOpen } from '../utils/modalState';
+import { PluginOrchestrator, PLUGIN_PRIORITIES } from '../core/PluginOrchestrator';
+import { TIMING } from '../core/constants';
 
 export interface AutoPaginationPluginProps {
   /** Whether auto pagination is enabled */
@@ -29,6 +30,9 @@ export interface AutoPaginationPluginProps {
   /** Debounce delay in ms for checking overflow */
   debounceMs?: number;
 }
+
+// Use centralized timing
+const DEFAULT_DEBOUNCE_MS = TIMING.DEBOUNCE_NORMAL;
 
 /**
  * Get the available content height of a folio (excluding header/footer)
@@ -38,9 +42,13 @@ function getContentHeight(folioElement: Element): number {
   const header = folioElement.querySelector('[data-header-node]');
   const footer = folioElement.querySelector('[data-footer-node]');
 
-  const totalHeight = folioElement.clientHeight;
-  const headerHeight = header ? header.getBoundingClientRect().height : 0;
-  const footerHeight = footer ? footer.getBoundingClientRect().height : 0;
+  // Use data-folio-height attribute (fixed A4 dimensions) instead of clientHeight
+  // clientHeight can be 0 during initial render, causing incorrect overflow detection
+  const totalHeight = parseInt(
+    folioElement.getAttribute('data-folio-height') || '1123', 10
+  );
+  const headerHeight = header?.getBoundingClientRect().height || 0;
+  const footerHeight = footer?.getBoundingClientRect().height || 0;
 
   // Return available content area height
   return totalHeight - headerHeight - footerHeight;
@@ -65,13 +73,40 @@ function getContentScrollHeight(folioElement: Element): number {
 
 /**
  * Check if a folio element has overflow (content exceeds visible area)
+ * Now with proactive detection - triggers when content is NEAR the footer
  */
 function hasFolioOverflow(folioElement: Element): boolean {
   const availableHeight = getContentHeight(folioElement);
   const contentHeight = getContentScrollHeight(folioElement);
 
-  // 10px tolerance for rounding errors
-  return contentHeight > availableHeight + 10;
+  // 20px buffer - trigger pagination BEFORE content reaches footer zone
+  // This ensures smooth page breaks like Google Docs
+  return contentHeight > availableHeight - 20;
+}
+
+/**
+ * Check if cursor is at the last line of available content area
+ * Used for proactive page creation on Enter key
+ */
+function isCursorNearContentBottom(folioElement: Element): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return false;
+
+  const range = selection.getRangeAt(0);
+  const cursorRect = range.getBoundingClientRect();
+  const folioRect = folioElement.getBoundingClientRect();
+
+  // Get footer position
+  const footer = folioElement.querySelector('[data-footer-node]');
+  const footerTop = footer ? footer.getBoundingClientRect().top : folioRect.bottom;
+
+  // Dynamic line height based on cursor element's computed style
+  const cursorElement = range.startContainer.parentElement;
+  const computedStyle = cursorElement ? window.getComputedStyle(cursorElement) : null;
+  const lineHeight = computedStyle ? parseFloat(computedStyle.lineHeight) || 24 : 24;
+
+  // Check if cursor is within 1.5 lines of the footer (more precise than 2 lines)
+  return cursorRect.bottom >= footerTop - (lineHeight * 1.5);
 }
 
 /**
@@ -107,13 +142,11 @@ function getCurrentFolioElement(): { element: Element | null; folioId: string | 
  */
 export function AutoPaginationPlugin({
   enabled = true,
-  debounceMs = 100,
+  debounceMs = DEFAULT_DEBOUNCE_MS,
 }: AutoPaginationPluginProps): null {
   const [editor] = useLexicalComposerContext();
   const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isProcessingRef = useRef(false);
-
-  const { createFolio } = useFolioStore.getState();
 
   /**
    * Create a new page and move overflow content to it
@@ -128,7 +161,6 @@ export function AutoPaginationPlugin({
     if (nodesToMove.length === 0) return null;
 
     const root = $getRoot();
-    const folioId = currentFolioNode.getFolioId();
     const orientation = currentFolioNode.getOrientation();
     const folioIndex = currentFolioNode.getFolioIndex();
 
@@ -157,19 +189,10 @@ export function AutoPaginationPlugin({
         }
       });
 
-      // Create folio in store with the same ID (deferred to avoid nested updates)
-      const capturedNewFolioId = newFolioId;
-      const capturedOrientation = orientation;
-      setTimeout(() => {
-        const { folios } = useFolioStore.getState();
-        // Only create if not already in store
-        if (!folios.has(capturedNewFolioId)) {
-          createFolio({
-            afterId: folioId,
-            orientation: capturedOrientation,
-          });
-        }
-      }, 0);
+      // NOTE: Don't call createFolio() here - FolioPlugin's syncEditorToStore()
+      // will automatically detect the new FolioNode and add it to the store
+      // with the correct ID. Calling createFolio() would create a duplicate
+      // entry with a different ID, causing store/editor desynchronization.
 
       console.log('[AutoPagination] Created new page:', newFolioId);
     }
@@ -233,10 +256,12 @@ export function AutoPaginationPlugin({
     }
 
     return nextFolioNode;
-  }, [editor, createFolio]);
+  }, [editor]);
 
   /**
    * Handle Enter key - check if we need to create a new page
+   * Key behavior: When user presses Enter near the bottom of a page,
+   * the new paragraph should be created on the next page, NOT in the footer zone.
    */
   const handleEnterKey = useCallback((event: KeyboardEvent | null): boolean => {
     if (!enabled || isProcessingRef.current) return false;
@@ -247,11 +272,12 @@ export function AutoPaginationPlugin({
     const { element: folioElement, folioId } = getCurrentFolioElement();
     if (!folioElement || !folioId) return false;
 
-    // Check if folio has overflow or is about to overflow
+    // Check if folio has overflow or cursor is near the footer (proactive pagination)
     const hasOverflow = hasFolioOverflow(folioElement);
+    const nearFooter = isCursorNearContentBottom(folioElement);
 
-    if (hasOverflow) {
-      console.log('[AutoPagination] Enter key - overflow detected, creating new page');
+    if (hasOverflow || nearFooter) {
+      console.log('[AutoPagination] Enter key - page break needed', { hasOverflow, nearFooter });
 
       isProcessingRef.current = true;
 
@@ -306,6 +332,31 @@ export function AutoPaginationPlugin({
             // If we found overflow nodes, move them
             if (nodesToMove.length > 0) {
               createNewPageWithOverflowContent(folio, nodesToMove);
+            } else if (nearFooter && !hasOverflow) {
+              // User is near footer but no overflow - create new page with just cursor
+              // This is the "proactive" page break like Google Docs
+              console.log('[AutoPagination] Proactive page break - cursor near footer');
+
+              // Create new page (which comes with an empty paragraph)
+              const nextPage = createNewPageWithOverflowContent(folio, []);
+
+              if (nextPage) {
+                // Find the first paragraph after header in the new page
+                const nextChildren = nextPage.getChildren();
+                const contentChild = nextChildren.find(child => {
+                  const key = child.getKey();
+                  const element = editor.getElementByKey(key);
+                  return element && !element.hasAttribute('data-header-node') && !element.hasAttribute('data-footer-node');
+                });
+
+                if (contentChild) {
+                  // Set selection at the content child
+                  const newSelection = $createRangeSelection();
+                  newSelection.anchor.set(contentChild.getKey(), 0, 'element');
+                  newSelection.focus.set(contentChild.getKey(), 0, 'element');
+                  $setSelection(newSelection);
+                }
+              }
             } else {
               // No specific overflow nodes found, but overflow detected
               // This can happen with a single large element
@@ -420,14 +471,16 @@ export function AutoPaginationPlugin({
   }, [editor, enabled, createNewPageWithOverflowContent, debounceMs]);
 
   /**
-   * Schedule overflow check with debounce
+   * Schedule overflow check using orchestrator
    */
   const scheduleOverflowCheck = useCallback(() => {
-    if (checkTimeoutRef.current) {
-      clearTimeout(checkTimeoutRef.current);
-    }
-    checkTimeoutRef.current = setTimeout(checkAndHandleOverflow, debounceMs);
-  }, [checkAndHandleOverflow, debounceMs]);
+    // Use orchestrator for coordinated updates
+    PluginOrchestrator.scheduleUpdate(
+      'auto-pagination',
+      PLUGIN_PRIORITIES.AUTO_PAGINATION,
+      checkAndHandleOverflow
+    );
+  }, [checkAndHandleOverflow]);
 
   /**
    * Register Enter key command
@@ -456,8 +509,8 @@ export function AutoPaginationPlugin({
       }
     });
 
-    // Initial check after mount
-    setTimeout(checkAndHandleOverflow, 500);
+    // Initial check after mount - use centralized timing
+    setTimeout(checkAndHandleOverflow, TIMING.INITIAL_LOAD_DELAY);
 
     return () => {
       removeUpdateListener();

@@ -448,32 +448,43 @@ export const useHeaderFooterStore = create<HeaderFooterState>()(
       initialize: () => {
         const { headers, footers, defaultHeaderId, defaultFooterId } = get();
 
-        // Only initialize if no defaults exist
-        if (defaultHeaderId || defaultFooterId) {
+        // Check if both header and footer are already initialized
+        if (defaultHeaderId && defaultFooterId) {
           console.log('[HeaderFooterStore] Already initialized');
           return;
         }
 
-        // Create default header
-        const defaultHeader = createDefaultHeader(uuidv4());
         const newHeaders = new Map(headers);
-        newHeaders.set(defaultHeader.id, defaultHeader);
-
-        // Create default footer
-        const defaultFooter = createDefaultFooter(uuidv4());
         const newFooters = new Map(footers);
-        newFooters.set(defaultFooter.id, defaultFooter);
+        let newDefaultHeaderId = defaultHeaderId;
+        let newDefaultFooterId = defaultFooterId;
+
+        // Create default header if not exists
+        if (!defaultHeaderId) {
+          const defaultHeader = createDefaultHeader(uuidv4());
+          newHeaders.set(defaultHeader.id, defaultHeader);
+          newDefaultHeaderId = defaultHeader.id;
+          console.log('[HeaderFooterStore] Created default header:', defaultHeader.id);
+        }
+
+        // Create default footer if not exists
+        if (!defaultFooterId) {
+          const defaultFooter = createDefaultFooter(uuidv4());
+          newFooters.set(defaultFooter.id, defaultFooter);
+          newDefaultFooterId = defaultFooter.id;
+          console.log('[HeaderFooterStore] Created default footer:', defaultFooter.id);
+        }
 
         set({
           headers: newHeaders,
           footers: newFooters,
-          defaultHeaderId: defaultHeader.id,
-          defaultFooterId: defaultFooter.id,
+          defaultHeaderId: newDefaultHeaderId,
+          defaultFooterId: newDefaultFooterId,
         });
 
         console.log('[HeaderFooterStore] Initialized with defaults:', {
-          defaultHeaderId: defaultHeader.id,
-          defaultFooterId: defaultFooter.id,
+          defaultHeaderId: newDefaultHeaderId,
+          defaultFooterId: newDefaultFooterId,
         });
       },
 

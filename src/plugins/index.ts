@@ -96,3 +96,6 @@ export type { KeyboardShortcutsPluginProps, KeyboardShortcut, ShortcutCategory }
 
 export { AutoPaginationPlugin } from './AutoPaginationPlugin';
 export type { AutoPaginationPluginProps } from './AutoPaginationPlugin';
+
+export { AutoSavePlugin } from './AutoSavePlugin';
+export type { AutoSavePluginProps } from './AutoSavePlugin';

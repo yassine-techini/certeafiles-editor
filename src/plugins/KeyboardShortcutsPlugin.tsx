@@ -114,7 +114,8 @@ function ShortcutsDialog({
   shortcuts: KeyboardShortcut[];
 }): JSX.Element | null {
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedCategory, setExpandedCategory] = useState<ShortcutCategory | null>('formatting');
+  // Show 'other' category first to highlight the special triggers (/, +, @)
+  const [expandedCategory, setExpandedCategory] = useState<ShortcutCategory | null>('other');
 
   if (!isOpen) return null;
 
@@ -436,6 +437,32 @@ export function KeyboardShortcutsPlugin({
       category: 'view',
       keys: ['F1'],
       action: () => setIsDialogOpen(true),
+    },
+
+    // Other - Special triggers
+    {
+      id: 'slash-command',
+      label: 'Menu commandes',
+      description: 'Ouvre le menu des commandes rapides (blocs, listes, etc.)',
+      category: 'other',
+      keys: ['/'],
+      action: () => {}, // Handled by SlashMenuPlugin
+    },
+    {
+      id: 'dynamic-field',
+      label: 'Champ dynamique',
+      description: 'Insère un champ dynamique (date, nom, etc.)',
+      category: 'other',
+      keys: ['+'],
+      action: () => {}, // Handled by DynamicFieldPlugin
+    },
+    {
+      id: 'mention',
+      label: 'Mention',
+      description: 'Mentionne un utilisateur ou une référence',
+      category: 'other',
+      keys: ['@'],
+      action: () => {}, // Handled by MentionPlugin
     },
   ];
 

@@ -33,10 +33,12 @@ export interface ImportDialogProps {
   editor?: LexicalEditor | undefined;
   /** Import complete handler for DOCX */
   onImportComplete?: ((result: ImportResult) => void) | undefined;
-  /** Handler for PDF folio creation */
-  onFoliosCreated?: ((folios: FolioData[]) => void) | undefined;
+  /** Handler for PDF folio creation - receives folios and insertion index */
+  onFoliosCreated?: ((folios: FolioData[], insertAfterIndex: number) => void) | undefined;
   /** Maximum file size in bytes */
   maxFileSize?: number | undefined;
+  /** Index of the folio to insert after (-1 = at beginning, undefined = at end) */
+  insertAfterIndex?: number | undefined;
 }
 
 /**
@@ -106,6 +108,7 @@ export function ImportDialog({
   onImportComplete,
   onFoliosCreated,
   maxFileSize = 20 * 1024 * 1024, // 20MB default for PDFs
+  insertAfterIndex,
 }: ImportDialogProps): JSX.Element | null {
   // State
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -308,8 +311,11 @@ export function ImportDialog({
       } else if (fileInfo.fileType === 'pdf') {
         // PDF import - create folios
         if (pdfFolios && pdfFolios.length > 0) {
-          // Call the folio creation handler
-          onFoliosCreated?.(pdfFolios);
+          // Determine insertion index: use provided index or insert at end (-1 means before first, undefined means end)
+          const effectiveIndex = insertAfterIndex ?? -1; // -1 will be handled by caller as "at end"
+
+          // Call the folio creation handler with insertion index
+          onFoliosCreated?.(pdfFolios, effectiveIndex);
 
           // Also call onImportComplete with full result
           const pdfResult = await pdfService.importPdf(fileInfo.file, {
@@ -346,6 +352,7 @@ export function ImportDialog({
     pdfService,
     pdfFolios,
     renderAsImages,
+    insertAfterIndex,
     onImportComplete,
     onFoliosCreated,
     onClose,

@@ -1,30 +1,23 @@
 /**
  * HeaderFooterEditorModal - Modal dialog for editing page headers and footers
  * Per Constitution Section 4.2 - Headers and Footers
+ * Design based on design2.png specification
  */
 import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import {
   X,
-  Hash,
-  Calendar,
-  Clock,
-  FileText,
-  User,
-  Plus,
-  Trash2,
-  RotateCcw,
-  Eye,
+  Bold,
+  Italic,
+  Underline,
+  AlignLeft,
+  Link,
+  Table,
+  Undo,
+  Redo,
+  ChevronDown,
+  Type,
 } from 'lucide-react';
 import { useHeaderFooterStore } from '../../stores/headerFooterStore';
-import {
-  type HeaderFooterContent,
-  type HeaderFooterSegment,
-  type DynamicFieldType,
-  createTextSegment,
-  createDynamicSegment,
-  DEFAULT_HEADER_HEIGHT,
-  DEFAULT_FOOTER_HEIGHT,
-} from '../../types/headerFooter';
 import { setModalOpen } from '../../utils/modalState';
 
 interface HeaderFooterEditorModalProps {
@@ -33,179 +26,236 @@ interface HeaderFooterEditorModalProps {
   initialTab?: 'header' | 'footer';
 }
 
-type SegmentPosition = 'left' | 'center' | 'right';
-
-const DYNAMIC_FIELDS: { type: DynamicFieldType; label: string; icon: React.ReactNode; preview: string }[] = [
-  { type: 'page_number', label: 'Numéro de page', icon: <Hash size={16} />, preview: '1' },
-  { type: 'total_pages', label: 'Total pages', icon: <Hash size={16} />, preview: '10' },
-  { type: 'date', label: 'Date', icon: <Calendar size={16} />, preview: new Date().toLocaleDateString() },
-  { type: 'time', label: 'Heure', icon: <Clock size={16} />, preview: new Date().toLocaleTimeString() },
-  { type: 'document_title', label: 'Titre du document', icon: <FileText size={16} />, preview: 'Document' },
-  { type: 'author', label: 'Auteur', icon: <User size={16} />, preview: 'Utilisateur' },
+// Special sections that can be customized
+const SPECIAL_SECTIONS = [
+  { id: 'products_by_group', label: 'Produits concernés (par groupes de produits):', placeholder: 'Titre section Produits (par groupes de produits) personnalisé' },
+  { id: 'products', label: 'Produits concernés (par produits):', placeholder: 'Titre section Produits (par produits) personnalisée' },
+  { id: 'history', label: 'Historique:', placeholder: 'Titre section Historique personnalisé' },
+  { id: 'validation', label: 'Validation:', placeholder: 'Titre section Validation personnalisé' },
+  { id: 'toc', label: 'Table des matières:', placeholder: 'Titre section Table des matières personnalisé' },
 ];
 
 /**
- * Segment Editor Component
+ * Mini Toolbar Component for rich text editing
  */
-function SegmentEditor({
-  segment,
-  position,
-  onChange,
-  onRemove,
-}: {
-  segment: HeaderFooterSegment | null;
-  position: SegmentPosition;
-  onChange: (segment: HeaderFooterSegment | null) => void;
-  onRemove: () => void;
-}) {
-  const [showDynamicPicker, setShowDynamicPicker] = useState(false);
-
-  const positionLabels: Record<SegmentPosition, string> = {
-    left: 'Gauche',
-    center: 'Centre',
-    right: 'Droite',
-  };
-
-  const handleTextChange = (text: string) => {
-    onChange(text ? createTextSegment(text) : null);
-  };
-
-  const handleDynamicFieldSelect = (fieldType: DynamicFieldType) => {
-    onChange(createDynamicSegment(fieldType));
-    setShowDynamicPicker(false);
-  };
-
-  const getSegmentPreview = (): string => {
-    if (!segment) return '';
-    if (segment.type === 'text') return segment.content || '';
-    if (segment.type === 'dynamic' && segment.dynamicField) {
-      const field = DYNAMIC_FIELDS.find(f => f.type === segment.dynamicField?.type);
-      return field ? `{${field.label}}` : '';
-    }
-    return '';
-  };
-
+function MiniToolbar({ className = '' }: { className?: string }) {
   return (
-    <div className="flex-1 min-w-0">
-      <label className="block text-xs font-medium text-slate-500 mb-1.5">
-        {positionLabels[position]}
-      </label>
-      <div className="relative">
-        <div className="flex gap-1">
-          <input
-            type="text"
-            value={segment?.type === 'text' ? segment.content || '' : ''}
-            onChange={(e) => handleTextChange(e.target.value)}
-            placeholder={segment?.type === 'dynamic' ? getSegmentPreview() : 'Texte...'}
-            className={`flex-1 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-              segment?.type === 'dynamic' ? 'bg-blue-50 border-blue-200' : 'border-slate-200'
-            }`}
-            disabled={segment?.type === 'dynamic'}
-          />
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowDynamicPicker(!showDynamicPicker)}
-              className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-slate-200 transition-colors"
-              title="Champ dynamique"
-            >
-              <Plus size={18} />
-            </button>
-            {showDynamicPicker && (
-              <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2 min-w-[200px]">
-                <div className="px-3 py-1 text-xs font-medium text-slate-400 uppercase">
-                  Champs dynamiques
-                </div>
-                {DYNAMIC_FIELDS.map((field) => (
-                  <button
-                    key={field.type}
-                    type="button"
-                    onClick={() => handleDynamicFieldSelect(field.type)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-100 text-left"
-                  >
-                    {field.icon}
-                    <span className="flex-1">{field.label}</span>
-                    <span className="text-xs text-slate-400">{field.preview}</span>
-                  </button>
-                ))}
+    <div className={`flex items-center gap-1 px-3 py-2 bg-slate-100 rounded-t-lg border border-slate-200 border-b-0 ${className}`}>
+      {/* Undo/Redo */}
+      <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-700">
+        <Undo size={16} />
+      </button>
+      <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-700">
+        <Redo size={16} />
+      </button>
+
+      <div className="w-px h-5 bg-slate-300 mx-1" />
+
+      {/* Paragraph style dropdown */}
+      <button type="button" className="flex items-center gap-1 px-2 py-1 hover:bg-slate-200 rounded text-sm text-slate-700">
+        Paragraphe
+        <ChevronDown size={14} />
+      </button>
+
+      {/* Font dropdown */}
+      <button type="button" className="flex items-center gap-1 px-2 py-1 hover:bg-slate-200 rounded text-sm text-slate-700">
+        Time New ...
+        <ChevronDown size={14} />
+      </button>
+
+      <div className="w-px h-5 bg-slate-300 mx-1" />
+
+      {/* Font size */}
+      <div className="flex items-center gap-0.5">
+        <button type="button" className="p-1 hover:bg-slate-200 rounded text-slate-500 text-sm">−</button>
+        <span className="text-sm text-slate-700 px-1">16px</span>
+        <button type="button" className="p-1 hover:bg-slate-200 rounded text-slate-500 text-sm">+</button>
+      </div>
+
+      <div className="w-px h-5 bg-slate-300 mx-1" />
+
+      {/* Text formatting */}
+      <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-slate-700 font-bold">
+        <Bold size={16} />
+      </button>
+      <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-slate-500">
+        <Italic size={16} />
+      </button>
+      <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-slate-500">
+        <Underline size={16} />
+      </button>
+      <button type="button" className="flex items-center p-1.5 hover:bg-slate-200 rounded">
+        <Type size={16} className="text-slate-500" />
+        <ChevronDown size={12} className="text-slate-400" />
+      </button>
+
+      {/* Text color with red indicator */}
+      <button type="button" className="flex items-center p-1.5 hover:bg-slate-200 rounded relative">
+        <span className="text-slate-700 font-serif text-sm">A</span>
+        <div className="absolute bottom-1 left-1.5 right-1.5 h-0.5 bg-red-500 rounded" />
+        <ChevronDown size={12} className="text-slate-400" />
+      </button>
+
+      <div className="w-px h-5 bg-slate-300 mx-1" />
+
+      {/* Alignment */}
+      <button type="button" className="flex items-center p-1.5 hover:bg-slate-200 rounded text-slate-500">
+        <AlignLeft size={16} />
+        <ChevronDown size={12} className="text-slate-400" />
+      </button>
+
+      {/* Link */}
+      <button type="button" className="p-1.5 hover:bg-slate-200 rounded text-slate-500">
+        <Link size={16} />
+      </button>
+
+      {/* Table */}
+      <button type="button" className="flex items-center p-1.5 hover:bg-slate-200 rounded text-slate-500">
+        <Table size={16} />
+        <ChevronDown size={12} className="text-slate-400" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Variable Tag Component - displays a variable as a bordered tag
+ */
+function VariableTag({ label, onClick }: { label: string; onClick?: () => void }) {
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 border border-slate-400 rounded text-sm text-slate-700 cursor-default hover:bg-slate-50"
+      onClick={onClick}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Header Editor Component - 3-column layout with rich editing
+ */
+function HeaderEditor() {
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-slate-900">En-tête:</label>
+
+      {/* Toolbar */}
+      <MiniToolbar />
+
+      {/* 3-Column Header Layout */}
+      <div className="border border-slate-200 rounded-b-lg bg-white">
+        <div className="flex divide-x divide-slate-200">
+          {/* Left Column - Logo */}
+          <div className="flex-1 p-4 min-h-[100px]">
+            <div className="flex items-center justify-center h-full">
+              <VariableTag label="logoEntreprise" />
+            </div>
+          </div>
+
+          {/* Center Column - Group Name & Document Name */}
+          <div className="flex-1 p-4 min-h-[100px]">
+            <div className="flex flex-col items-center justify-center h-full gap-2">
+              <VariableTag label="nomGroupeProduits" />
+              <VariableTag label="nomDocument" />
+            </div>
+          </div>
+
+          {/* Right Column - Metadata */}
+          <div className="flex-1 p-4 min-h-[100px]">
+            <div className="flex flex-col items-end justify-center h-full gap-1 text-sm">
+              <div className="flex items-center gap-1">
+                <VariableTag label="refVersionneeModele" />
               </div>
-            )}
+              <div className="flex items-center gap-1">
+                <span className="text-slate-600">Application date:</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <VariableTag label="dateApplicationModele" />
+              </div>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-slate-600">Page</span>
+                <VariableTag label="pagecourante" />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-600">sur</span>
+                <VariableTag label="nbreTotalPages" />
+              </div>
+            </div>
           </div>
-          {segment && (
-            <button
-              type="button"
-              onClick={onRemove}
-              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Supprimer"
-            >
-              <Trash2 size={18} />
-            </button>
-          )}
         </div>
-        {segment?.type === 'dynamic' && (
-          <div className="mt-1 text-xs text-blue-600 flex items-center gap-1">
-            <Hash size={12} />
-            Champ dynamique: {getSegmentPreview()}
-          </div>
-        )}
+      </div>
+
+      {/* Helper text */}
+      <p className="text-xs text-slate-500">
+        Utilisez + pour accéder aux éléments nécessaires
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Special Sections Editor Component
+ */
+function SpecialSectionsEditor({
+  sections,
+  onChange,
+}: {
+  sections: Record<string, string>;
+  onChange: (sectionId: string, value: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900 mb-4">
+          Sections spéciales : personnalisez ici les titres des sections spéciales:
+        </h3>
+
+        <div className="space-y-4">
+          {SPECIAL_SECTIONS.map((section) => (
+            <div key={section.id} className="flex items-center gap-4">
+              <label className="w-72 text-sm text-slate-700 shrink-0">
+                {section.label}
+              </label>
+              <input
+                type="text"
+                value={sections[section.id] || ''}
+                onChange={(e) => onChange(section.id, e.target.value)}
+                placeholder={section.placeholder}
+                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
 /**
- * Preview Component
+ * Footer Editor Component - with rich editing
  */
-function Preview({
-  content,
-  type,
-}: {
-  content: HeaderFooterContent | null;
-  type: 'header' | 'footer';
-}) {
-  const getPreviewText = (segment: HeaderFooterSegment | null): string => {
-    if (!segment) return '';
-    if (segment.type === 'text') return segment.content || '';
-    if (segment.type === 'dynamic' && segment.dynamicField) {
-      switch (segment.dynamicField.type) {
-        case 'page_number': return '1';
-        case 'total_pages': return '10';
-        case 'date': return new Date().toLocaleDateString('fr-FR');
-        case 'time': return new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        case 'document_title': return 'Document Title';
-        case 'author': return 'Auteur';
-        default: return '';
-      }
-    }
-    return '';
-  };
-
-  if (!content) {
-    return (
-      <div className="bg-slate-100 rounded-lg p-4 text-center text-slate-400 text-sm">
-        Aucun {type === 'header' ? 'en-tête' : 'pied de page'} configuré
-      </div>
-    );
-  }
-
+function FooterEditor() {
   return (
-    <div
-      className={`bg-white border rounded-lg ${
-        type === 'header' ? 'border-b-2 border-b-slate-300' : 'border-t-2 border-t-slate-300'
-      }`}
-      style={{ height: `${content.height * 2}px`, minHeight: '40px' }}
-    >
-      <div className="h-full flex items-center justify-between px-4 text-sm text-slate-700">
-        <div className="flex-1 text-left truncate">
-          {getPreviewText(content.left)}
-        </div>
-        <div className="flex-1 text-center truncate font-medium">
-          {getPreviewText(content.center)}
-        </div>
-        <div className="flex-1 text-right truncate">
-          {getPreviewText(content.right)}
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-slate-900">Pied de page:</label>
+
+      {/* Toolbar */}
+      <MiniToolbar />
+
+      {/* Footer Content Area */}
+      <div className="border border-slate-200 rounded-b-lg bg-white p-4 min-h-[60px]">
+        <div className="flex items-center justify-center gap-2">
+          <VariableTag label="refVersionneeDocument" />
+          <span className="text-slate-600">-</span>
+          <VariableTag label="nomDocument" />
         </div>
       </div>
+
+      {/* Helper text */}
+      <p className="text-xs text-slate-500">
+        Utilisez + pour accéder aux éléments nécessaires
+      </p>
     </div>
   );
 }
@@ -216,24 +266,18 @@ function Preview({
 export function HeaderFooterEditorModal({
   isOpen,
   onClose,
-  initialTab = 'header',
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  initialTab: _initialTab = 'header',
 }: HeaderFooterEditorModalProps) {
-  const [activeTab, setActiveTab] = useState<'header' | 'footer'>(initialTab);
-
   // Store actions
   const {
-    getDefaultHeader,
-    getDefaultFooter,
-    updateHeaderSegment,
-    updateFooterSegment,
-    updateHeader,
-    updateFooter,
-    resetDefaultHeaderToTemplate,
-    resetDefaultFooterToTemplate,
     defaultHeaderId,
     defaultFooterId,
     initialize,
   } = useHeaderFooterStore();
+
+  // Local state for special sections
+  const [specialSections, setSpecialSections] = useState<Record<string, string>>({});
 
   // Initialize store if needed
   useEffect(() => {
@@ -243,7 +287,6 @@ export function HeaderFooterEditorModal({
   }, [isOpen, defaultHeaderId, defaultFooterId, initialize]);
 
   // CRITICAL: Set modal state synchronously using useLayoutEffect
-  // This runs before useEffect and before browser paint
   useLayoutEffect(() => {
     if (isOpen) {
       setModalOpen(true);
@@ -257,64 +300,20 @@ export function HeaderFooterEditorModal({
     };
   }, [isOpen]);
 
-  // Get current content
-  const headerContent = getDefaultHeader() || null;
-  const footerContent = getDefaultFooter() || null;
+  // Handle special section change
+  const handleSpecialSectionChange = useCallback((sectionId: string, value: string) => {
+    setSpecialSections(prev => ({
+      ...prev,
+      [sectionId]: value,
+    }));
+  }, []);
 
-  // Current content based on active tab
-  const currentContent = activeTab === 'header' ? headerContent : footerContent;
-  const currentId = activeTab === 'header' ? defaultHeaderId : defaultFooterId;
-
-  // Update segment handler
-  const handleSegmentChange = useCallback(
-    (position: SegmentPosition, segment: HeaderFooterSegment | null) => {
-      if (!currentId) return;
-
-      if (activeTab === 'header') {
-        updateHeaderSegment(currentId, position, segment);
-      } else {
-        updateFooterSegment(currentId, position, segment);
-      }
-    },
-    [activeTab, currentId, updateHeaderSegment, updateFooterSegment]
-  );
-
-  // Update height handler
-  const handleHeightChange = useCallback(
-    (height: number) => {
-      if (!currentId) return;
-
-      if (activeTab === 'header') {
-        updateHeader(currentId, { height });
-      } else {
-        updateFooter(currentId, { height });
-      }
-    },
-    [activeTab, currentId, updateHeader, updateFooter]
-  );
-
-  // Update options handler
-  const handleOptionsChange = useCallback(
-    (updates: Partial<HeaderFooterContent>) => {
-      if (!currentId) return;
-
-      if (activeTab === 'header') {
-        updateHeader(currentId, updates);
-      } else {
-        updateFooter(currentId, updates);
-      }
-    },
-    [activeTab, currentId, updateHeader, updateFooter]
-  );
-
-  // Reset handler
-  const handleReset = useCallback(() => {
-    if (activeTab === 'header') {
-      resetDefaultHeaderToTemplate();
-    } else {
-      resetDefaultFooterToTemplate();
-    }
-  }, [activeTab, resetDefaultHeaderToTemplate, resetDefaultFooterToTemplate]);
+  // Handle close with save
+  const handleApply = useCallback(() => {
+    // Save special sections to store if needed
+    // For now, we just close the modal
+    onClose();
+  }, [onClose]);
 
   if (!isOpen) return null;
 
@@ -322,16 +321,16 @@ export function HeaderFooterEditorModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+      <div className="relative bg-slate-50 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+        <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200">
           <h2 className="text-lg font-semibold text-slate-900">
-            En-têtes et pieds de page
+            Configuration des en-têtes et pieds de page
           </h2>
           <button
             type="button"
@@ -342,188 +341,37 @@ export function HeaderFooterEditorModal({
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => setActiveTab('header')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'header'
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            En-tête (Header)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('footer')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'footer'
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            Pied de page (Footer)
-          </button>
-        </div>
-
         {/* Content */}
-        <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-          {/* Preview */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Eye size={16} className="text-slate-400" />
-              <h3 className="text-sm font-medium text-slate-700">Apercu</h3>
-            </div>
-            <Preview content={currentContent} type={activeTab} />
-          </div>
+        <div className="p-6 space-y-8 overflow-y-auto max-h-[calc(90vh-140px)] bg-slate-50">
+          {/* Header Editor */}
+          <HeaderEditor />
 
-          {/* Segment Editors */}
-          <div>
-            <h3 className="text-sm font-medium text-slate-700 mb-3">Contenu</h3>
-            <div className="flex gap-4">
-              <SegmentEditor
-                segment={currentContent?.left || null}
-                position="left"
-                onChange={(segment) => handleSegmentChange('left', segment)}
-                onRemove={() => handleSegmentChange('left', null)}
-              />
-              <SegmentEditor
-                segment={currentContent?.center || null}
-                position="center"
-                onChange={(segment) => handleSegmentChange('center', segment)}
-                onRemove={() => handleSegmentChange('center', null)}
-              />
-              <SegmentEditor
-                segment={currentContent?.right || null}
-                position="right"
-                onChange={(segment) => handleSegmentChange('right', segment)}
-                onRemove={() => handleSegmentChange('right', null)}
-              />
-            </div>
-          </div>
+          {/* Special Sections */}
+          <SpecialSectionsEditor
+            sections={specialSections}
+            onChange={handleSpecialSectionChange}
+          />
 
-          {/* Quick Insert */}
-          <div>
-            <h3 className="text-sm font-medium text-slate-700 mb-3">Insertion rapide</h3>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => handleSegmentChange('center', createTextSegment('Page {page} / {total}'))}
-                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded-full text-slate-700 transition-colors"
-              >
-                Page X / Y
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSegmentChange('right', createDynamicSegment('date'))}
-                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded-full text-slate-700 transition-colors"
-              >
-                Date
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSegmentChange('left', createTextSegment('Document confidentiel'))}
-                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded-full text-slate-700 transition-colors"
-              >
-                Confidentiel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSegmentChange('center', createDynamicSegment('document_title'))}
-                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded-full text-slate-700 transition-colors"
-              >
-                Titre du document
-              </button>
-            </div>
-          </div>
-
-          {/* Options */}
-          <div>
-            <h3 className="text-sm font-medium text-slate-700 mb-3">Options</h3>
-            <div className="space-y-4">
-              {/* Height */}
-              <div className="flex items-center gap-4">
-                <label className="text-sm text-slate-600 w-32">Hauteur (mm)</label>
-                <input
-                  type="number"
-                  min={10}
-                  max={50}
-                  value={currentContent?.height || (activeTab === 'header' ? DEFAULT_HEADER_HEIGHT : DEFAULT_FOOTER_HEIGHT)}
-                  onChange={(e) => handleHeightChange(parseInt(e.target.value) || 15)}
-                  className="w-24 px-3 py-1.5 text-sm border border-slate-200 rounded-lg"
-                />
-              </div>
-
-              {/* Show on first page */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentContent?.showOnFirstPage ?? true}
-                  onChange={(e) => handleOptionsChange({ showOnFirstPage: e.target.checked })}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-slate-600">
-                  Afficher sur la premiere page
-                </span>
-              </label>
-
-              {/* Show border */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentContent?.showBorder ?? false}
-                  onChange={(e) => handleOptionsChange({ showBorder: e.target.checked })}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-slate-600">
-                  Afficher une bordure
-                </span>
-              </label>
-
-              {/* Different odd/even */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentContent?.differentOddEven ?? false}
-                  onChange={(e) => handleOptionsChange({ differentOddEven: e.target.checked })}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-slate-600">
-                  Different sur pages paires/impaires
-                </span>
-              </label>
-            </div>
-          </div>
+          {/* Footer Editor */}
+          <FooterEditor />
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-white border-t border-slate-200">
           <button
             type="button"
-            onClick={handleReset}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition-colors"
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
           >
-            <RotateCcw size={16} />
-            Reinitialiser
+            Annuler
           </button>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              Appliquer
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleApply}
+            className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            Appliquer
+          </button>
         </div>
       </div>
     </div>

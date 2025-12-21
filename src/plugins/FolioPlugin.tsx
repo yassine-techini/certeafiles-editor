@@ -40,6 +40,8 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
   const isSyncingRef = useRef(false);
   // Generation counter to prevent feedback loops
   const syncGenerationRef = useRef(0);
+  // Ref to hold the init function for recursive calls
+  const initFnRef = useRef<(() => void) | null>(null);
 
   // Get store state and actions
   const activeFolioId = useFolioStore((state) => state.activeFolioId);
@@ -155,7 +157,22 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
       if (storeFolios.length === 0) {
         // Initialize store with default folio
         initialize();
-        return; // Will be called again when store updates
+
+        // Subscribe to store update instead of using fragile setTimeout
+        // This ensures we react as soon as the store is updated
+        const unsubscribe = useFolioStore.subscribe(
+          (state) => state.folios.size,
+          (size) => {
+            if (size > 0) {
+              unsubscribe();
+              isInitializedRef.current = false;
+              if (initFnRef.current) {
+                initFnRef.current();
+              }
+            }
+          }
+        );
+        return;
       }
 
       console.log('[FolioPlugin] Initializing editor with', storeFolios.length, 'folios');
@@ -197,6 +214,9 @@ export function FolioPlugin({ autoSync = true }: FolioPluginProps): null {
       isInitializedRef.current = true;
     });
   }, [editor, initialize, syncEditorToStore]);
+
+  // Update ref to point to the initialization function for recursive calls
+  initFnRef.current = initializeFoliosInEditor;
 
   // Handle INSERT_FOLIO_COMMAND
   const handleInsertFolio = useCallback(
