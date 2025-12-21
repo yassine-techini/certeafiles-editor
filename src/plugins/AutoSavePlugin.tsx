@@ -33,6 +33,9 @@ export function AutoSavePlugin({
   const lastContentRef = useRef<string>('');
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Flag to skip initial editor updates during initialization
+  const isInitializedRef = useRef(false);
+  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     documentId,
@@ -110,7 +113,13 @@ export function AutoSavePlugin({
     if (!enabled || !autoSaveEnabled) return;
 
     const removeUpdateListener = editor.registerUpdateListener(
-      ({ editorState, dirtyElements, dirtyLeaves }) => {
+      ({ editorState, dirtyElements, dirtyLeaves, tags }) => {
+        // Skip if not yet initialized (avoid saving during initial load)
+        if (!isInitializedRef.current) return;
+
+        // Skip history-related or other internal updates
+        if (tags.has('history-merge') || tags.has('historic')) return;
+
         // Only mark dirty if there are actual content changes
         if (dirtyElements.size > 0 || dirtyLeaves.size > 0) {
           const content = JSON.stringify(editorState.toJSON());
@@ -182,13 +191,49 @@ export function AutoSavePlugin({
   }, [enabled, autoSaveEnabled, isDirty, documentId, getEditorContent]);
 
   /**
-   * Initialize last content reference
+   * Initialize last content reference and enable tracking after delay
+   * This prevents auto-save from triggering during initial document load
    */
   useEffect(() => {
-    if (documentId) {
-      lastContentRef.current = getEditorContent();
+    if (!documentId) {
+      return;
     }
-  }, [documentId, getEditorContent]);
+
+    // Get current content directly from editor (avoid using callback in deps)
+    const getCurrentContent = (): string => {
+      let content = '';
+      editor.getEditorState().read(() => {
+        content = JSON.stringify(editor.getEditorState().toJSON());
+      });
+      return content;
+    };
+
+    // Initialize content reference immediately
+    lastContentRef.current = getCurrentContent();
+
+    // Reset initialization flag
+    isInitializedRef.current = false;
+
+    // Clear any pending timeout
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+    }
+
+    // Wait for editor to stabilize before enabling auto-save tracking
+    // This gives time for initial content loading, folio creation, etc.
+    initTimeoutRef.current = setTimeout(() => {
+      // Update the content reference again after stabilization
+      lastContentRef.current = getCurrentContent();
+      isInitializedRef.current = true;
+      console.log('[AutoSavePlugin] Initialized, tracking changes now');
+    }, 2000); // 2 seconds delay to allow initial setup
+
+    return () => {
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+      }
+    };
+  }, [documentId, editor]);
 
   return null;
 }
