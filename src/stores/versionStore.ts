@@ -58,7 +58,7 @@ const initialState: VersionState = {
   isDirty: false,
   lastSavedAt: null,
   isSaving: false,
-  autoSaveEnabled: true,
+  autoSaveEnabled: false,
   error: null,
 };
 
