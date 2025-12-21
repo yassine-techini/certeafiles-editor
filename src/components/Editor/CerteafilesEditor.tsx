@@ -112,6 +112,12 @@ export interface CerteafilesEditorProps {
   onCollaborationUsersChange?: (users: CollaborationUser[]) => void;
   /** Callback when collaboration state changes */
   onCollaborationStateChange?: (state: CollaborationState) => void;
+  /** Collaboration status (controlled - overrides internal state when provided) */
+  controlledCollaborationStatus?: ConnectionStatus;
+  /** Collaboration users (controlled - overrides internal state when provided) */
+  controlledCollaborationUsers?: CollaborationUser[];
+  /** Whether collaboration is synced (controlled - overrides internal state when provided) */
+  controlledCollaborationSynced?: boolean;
 }
 
 /**
@@ -142,6 +148,9 @@ function EditorInner({
   onCollaborationStatusChange,
   onCollaborationUsersChange,
   onCollaborationStateChange,
+  controlledCollaborationStatus,
+  controlledCollaborationUsers,
+  controlledCollaborationSynced,
 }: {
   orientation: Orientation;
   zoom: number;
@@ -164,6 +173,9 @@ function EditorInner({
   onCollaborationStatusChange: ((status: ConnectionStatus) => void) | undefined;
   onCollaborationUsersChange: ((users: CollaborationUser[]) => void) | undefined;
   onCollaborationStateChange: ((state: CollaborationState) => void) | undefined;
+  controlledCollaborationStatus: ConnectionStatus | undefined;
+  controlledCollaborationUsers: CollaborationUser[] | undefined;
+  controlledCollaborationSynced: boolean | undefined;
 }): JSX.Element {
   const [editor] = useLexicalComposerContext();
 
@@ -180,26 +192,32 @@ function EditorInner({
   // Header/Footer editor modal state
   const [isHeaderFooterEditorOpen, setIsHeaderFooterEditorOpen] = useState(false);
 
-  // Collaboration state for status bar
-  const [collaborationStatus, setCollaborationStatus] = useState<ConnectionStatus>('disconnected');
-  const [collaborationUsers, setCollaborationUsers] = useState<CollaborationUser[]>([]);
-  const [isSynced, setIsSynced] = useState(false);
+  // Collaboration state for status bar (internal state, can be overridden by controlled props)
+  const [internalCollaborationStatus, setInternalCollaborationStatus] = useState<ConnectionStatus>('disconnected');
+  const [internalCollaborationUsers, setInternalCollaborationUsers] = useState<CollaborationUser[]>([]);
+  const [internalIsSynced, setInternalIsSynced] = useState(false);
 
-  // Handle collaboration callbacks
+  // Use controlled props when provided, otherwise fall back to internal state
+  // This unifies the source of truth - parent can control the state if needed
+  const collaborationStatus = controlledCollaborationStatus ?? internalCollaborationStatus;
+  const collaborationUsers = controlledCollaborationUsers ?? internalCollaborationUsers;
+  const isSynced = controlledCollaborationSynced ?? internalIsSynced;
+
+  // Handle collaboration callbacks - update internal state and notify parent
   const handleCollaborationStatusChange = useCallback((status: ConnectionStatus) => {
-    setCollaborationStatus(status);
+    setInternalCollaborationStatus(status);
     onCollaborationStatusChange?.(status);
   }, [onCollaborationStatusChange]);
 
   const handleCollaborationUsersChange = useCallback((users: CollaborationUser[]) => {
-    setCollaborationUsers(users);
+    setInternalCollaborationUsers(users);
     onCollaborationUsersChange?.(users);
   }, [onCollaborationUsersChange]);
 
   const handleCollaborationStateChange = useCallback((state: CollaborationState) => {
-    setCollaborationStatus(state.status);
-    setCollaborationUsers(state.users);
-    setIsSynced(state.isSynced);
+    setInternalCollaborationStatus(state.status);
+    setInternalCollaborationUsers(state.users);
+    setInternalIsSynced(state.isSynced);
     onCollaborationStateChange?.(state);
   }, [onCollaborationStateChange]);
 
@@ -546,6 +564,9 @@ export function CerteafilesEditor({
   onCollaborationStatusChange,
   onCollaborationUsersChange,
   onCollaborationStateChange,
+  controlledCollaborationStatus,
+  controlledCollaborationUsers,
+  controlledCollaborationSynced,
 }: CerteafilesEditorProps): JSX.Element {
   // Create editor configuration
   const editorConfig = createEditorConfig({ editable });
@@ -584,6 +605,9 @@ export function CerteafilesEditor({
           onCollaborationStatusChange={onCollaborationStatusChange}
           onCollaborationUsersChange={onCollaborationUsersChange}
           onCollaborationStateChange={onCollaborationStateChange}
+          controlledCollaborationStatus={controlledCollaborationStatus}
+          controlledCollaborationUsers={controlledCollaborationUsers}
+          controlledCollaborationSynced={controlledCollaborationSynced}
         />
       </div>
     </LexicalComposer>
