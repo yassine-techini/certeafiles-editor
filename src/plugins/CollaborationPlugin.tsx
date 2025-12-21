@@ -6,8 +6,12 @@
  */
 import { useEffect, useMemo, useRef, useCallback } from 'react';
 import { CollaborationPlugin as LexicalCollaborationPlugin } from '@lexical/react/LexicalCollaborationPlugin';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { $getRoot } from 'lexical';
 import type { Provider, ProviderAwareness, UserState } from '@lexical/yjs';
 import * as Y from 'yjs';
+import { v4 as uuidv4 } from 'uuid';
+import { $createFolioNode } from '../nodes/FolioNode';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
@@ -567,6 +571,8 @@ export interface CollaborationPluginProps {
   onSyncChange?: ((synced: boolean) => void) | undefined;
   onUsersChange?: ((users: CollaborationUser[]) => void) | undefined;
   onStateChange?: ((state: CollaborationState) => void) | undefined;
+  /** Callback when bootstrap should occur (document is empty after sync) */
+  onBootstrapNeeded?: (() => void) | undefined;
   enabled?: boolean | undefined;
 }
 
@@ -590,11 +596,14 @@ export function CollaborationPlugin({
   onSyncChange,
   onUsersChange,
   onStateChange,
+  onBootstrapNeeded,
   enabled = true,
 }: CollaborationPluginProps): JSX.Element | null {
+  const [editor] = useLexicalComposerContext();
   const userId = user?.id || getUserId();
   const userName = user?.name || getUserName();
   const userColor = user?.color || getColorForUser(userId);
+  const hasBootstrappedRef = useRef(false);
 
   const collaborationUser = useMemo(() => ({
     id: userId,
@@ -607,13 +616,15 @@ export function CollaborationPlugin({
   const onSyncChangeRef = useRef(onSyncChange);
   const onUsersChangeRef = useRef(onUsersChange);
   const onStateChangeRef = useRef(onStateChange);
+  const onBootstrapNeededRef = useRef(onBootstrapNeeded);
 
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
     onSyncChangeRef.current = onSyncChange;
     onUsersChangeRef.current = onUsersChange;
     onStateChangeRef.current = onStateChange;
-  }, [onStatusChange, onSyncChange, onUsersChange, onStateChange]);
+    onBootstrapNeededRef.current = onBootstrapNeeded;
+  }, [onStatusChange, onSyncChange, onUsersChange, onStateChange, onBootstrapNeeded]);
 
   // Provider factory for Lexical CollaborationPlugin
   const providerFactory = useCallback((id: string, yjsDocMap: Map<string, Y.Doc>): Provider => {
@@ -646,6 +657,39 @@ export function CollaborationPlugin({
     const handleSync = (synced: boolean) => {
       console.log('[CollaborationPlugin] Sync change:', synced);
       onSyncChangeRef.current?.(synced);
+
+      // Bootstrap if synced and editor is empty
+      if (synced && !hasBootstrappedRef.current) {
+        // Wait a tick for Yjs to apply any pending updates
+        setTimeout(() => {
+          editor.getEditorState().read(() => {
+            const root = $getRoot();
+            const isEmpty = root.getChildrenSize() === 0 ||
+              (root.getChildrenSize() === 1 && root.getTextContent().trim() === '');
+
+            if (isEmpty) {
+              console.log('[CollaborationPlugin] Document is empty after sync, bootstrapping...');
+              hasBootstrappedRef.current = true;
+
+              // Call the bootstrap callback if provided
+              if (onBootstrapNeededRef.current) {
+                onBootstrapNeededRef.current();
+              } else {
+                // Default bootstrap: create a folio
+                editor.update(() => {
+                  const folioNode = $createFolioNode({
+                    folioId: uuidv4(),
+                    folioIndex: 0,
+                    orientation: 'portrait',
+                  });
+                  $getRoot().append(folioNode);
+                  console.log('[CollaborationPlugin] Created initial folio');
+                });
+              }
+            }
+          });
+        }, 100);
+      }
     };
 
     const handleAwarenessChange = () => {

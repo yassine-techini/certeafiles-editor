@@ -1266,7 +1266,7 @@ function DemoApp(): JSX.Element {
                 showCommentPanel={false}
                 showRevisionPanel={false}
                 onCommentClick={handleCommentClick}
-                enableCollaboration={true}
+                enableCollaboration={false}
                 collaborationRoomId={collaborationRoomId}
                 onCollaborationStatusChange={setCollaborationStatus}
                 onCollaborationUsersChange={setCollaborationUsers}
