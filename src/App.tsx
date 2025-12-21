@@ -228,7 +228,7 @@ function App(): JSX.Element {
                 className="mx-auto"
                 showToolbar={true}
                 showCommentPanel={true}
-                enableCollaboration={false}
+                enableCollaboration={true}
                 collaborationRoomId="certeafiles-demo-room"
                 collaborationUser={{
                   id: collaboration.currentUser.id,
