@@ -2,7 +2,7 @@
  * FolioPanel - Left sidebar with folio thumbnails
  * Per Constitution Section 4.1 - Redesigned per design specs
  */
-import { useCallback, useState, useRef, useEffect, memo } from 'react';
+import { useCallback, useState, useRef, useEffect, memo, useMemo } from 'react';
 import {
   Plus,
   Download,
@@ -44,7 +44,7 @@ export interface FolioPanelProps {
 }
 
 /**
- * Section divider with label
+ * Section divider with label - Linear Style
  */
 function SectionDivider({
   label,
@@ -58,11 +58,11 @@ function SectionDivider({
   return (
     <div className="flex items-center gap-2 py-2 px-1">
       <div className="flex-1 flex items-center">
-        <div className="h-px bg-gray-300 flex-1" />
-        <span className="px-2 text-xs text-gray-500 font-medium whitespace-nowrap">
+        <div className="h-px bg-theme-border-subtle flex-1" />
+        <span className="px-2 text-xs text-theme-text-muted font-medium whitespace-nowrap uppercase tracking-wider">
           {label}
         </span>
-        <div className="h-px bg-gray-300 flex-1" />
+        <div className="h-px bg-theme-border-subtle flex-1" />
       </div>
       {(onEdit || onDelete) && (
         <div className="flex items-center gap-1">
@@ -70,7 +70,7 @@ function SectionDivider({
             <button
               type="button"
               onClick={onEdit}
-              className="p-1 text-blue-500 hover:bg-blue-50 rounded transition-colors"
+              className="p-1 text-accent-primary hover:bg-accent-100 rounded-md transition-colors"
               title="Éditer la section"
             >
               <Pencil size={14} />
@@ -80,7 +80,7 @@ function SectionDivider({
             <button
               type="button"
               onClick={onDelete}
-              className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+              className="p-1 text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
               title="Supprimer la section"
             >
               <Trash2 size={14} />
@@ -93,7 +93,7 @@ function SectionDivider({
 }
 
 /**
- * Zoom control component
+ * Zoom control component - Linear Style
  */
 function ZoomControl({
   zoom,
@@ -117,25 +117,25 @@ function ZoomControl({
   };
 
   return (
-    <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 px-2 py-1">
+    <div className="flex items-center gap-1 bg-theme-bg-tertiary rounded-lg border border-theme-border-subtle px-2 py-1">
       <button
         type="button"
         onClick={handleZoomOut}
-        className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+        className="p-1 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-bg-hover rounded-md transition-colors"
         title="Zoom arrière"
       >
         <ZoomOut size={14} />
       </button>
       <div className="flex items-center gap-1 px-1">
-        <span className="text-sm text-gray-700 font-medium min-w-[40px] text-center">
+        <span className="text-sm text-theme-text-primary font-medium min-w-[40px] text-center">
           {zoomPercent}%
         </span>
-        <ChevronDown size={12} className="text-gray-400" />
+        <ChevronDown size={12} className="text-theme-text-muted" />
       </div>
       <button
         type="button"
         onClick={handleZoomIn}
-        className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+        className="p-1 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-bg-hover rounded-md transition-colors"
         title="Zoom avant"
       >
         <ZoomIn size={14} />
@@ -164,7 +164,11 @@ export const FolioPanel = memo(function FolioPanel({
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
 
   // Get store state and actions
-  const folios = useFolioStore((state) => state.getFoliosInOrder());
+  // Use shallow selector on folios Map directly for proper reactivity
+  const foliosMap = useFolioStore((state) => state.folios);
+  const folios = useMemo(() => {
+    return Array.from(foliosMap.values()).sort((a, b) => a.index - b.index);
+  }, [foliosMap]);
   const sections = useFolioStore((state) =>
     Array.from(state.sections.values()).sort((a, b) => a.index - b.index)
   );
@@ -310,32 +314,32 @@ export const FolioPanel = memo(function FolioPanel({
 
   return (
     <aside
-      className="flex flex-col h-full"
+      className="flex flex-col h-full bg-theme-bg-secondary border-r border-theme-border-subtle"
       style={{ width }}
     >
-      {/* Loading overlay */}
+      {/* Loading overlay - Linear style */}
       {isLoadingThumbnails && (
-        <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
-          <div className="flex items-center gap-2 mb-1.5">
-            <Loader2 size={14} className="text-blue-500 animate-spin" />
-            <span className="text-xs font-medium text-blue-700">
+        <div className="px-3 py-2.5 bg-accent-100 border-b border-accent-primary/20">
+          <div className="flex items-center gap-2 mb-2">
+            <Loader2 size={14} className="text-accent-primary animate-spin" />
+            <span className="text-xs font-medium text-accent-primary">
               Génération des aperçus...
             </span>
           </div>
-          <div className="w-full bg-blue-200 rounded-full h-1.5">
+          <div className="w-full bg-theme-bg-tertiary rounded-full h-1.5 overflow-hidden">
             <div
-              className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+              className="bg-gradient-to-r from-accent-primary to-accent-secondary h-1.5 rounded-full transition-all duration-300"
               style={{ width: `${Math.round(thumbnailProgress * 100)}%` }}
             />
           </div>
-          <div className="text-[10px] text-blue-600 mt-1 text-center">
+          <div className="text-[10px] text-accent-primary/80 mt-1.5 text-center">
             {Math.round(thumbnailProgress * 100)}% ({Math.round(thumbnailProgress * folios.length)}/{folios.length} pages)
           </div>
         </div>
       )}
 
-      {/* Folio list with blue scrollbar */}
-      <div ref={listContainerRef} className="flex-1 overflow-y-auto p-3 left-panel-scroll">
+      {/* Folio list - Linear style scrollbar */}
+      <div ref={listContainerRef} className="flex-1 overflow-y-auto p-3 scrollbar-thin">
         {showSections && sections.length > 0 && (
           <div className="mb-2">
             {renderFoliosWithSections()}
@@ -413,41 +417,41 @@ export const FolioPanel = memo(function FolioPanel({
         )}
       </div>
 
-      {/* Bottom buttons - modern design */}
-      <div className="p-3 border-t border-slate-200/60 bg-gradient-to-r from-slate-50 to-white space-y-2">
-        {/* Add page button */}
+      {/* Bottom buttons - Linear style */}
+      <div className="p-3 border-t border-theme-border-subtle bg-theme-bg-tertiary/50 space-y-2">
+        {/* Add page button - Gradient accent */}
         <button
           type="button"
           onClick={handleAddFolio}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-semibold rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-gradient-to-r from-accent-primary to-accent-secondary text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-all duration-200 shadow-lg shadow-accent-primary/25 hover:shadow-accent-primary/40"
         >
           <Plus size={18} />
           Ajouter une page
         </button>
 
-        {/* Download button */}
+        {/* Download button - Ghost style */}
         <button
           type="button"
           onClick={handleDownload}
           disabled={isExporting}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-all duration-200 ${
-            isExporting ? 'opacity-70 cursor-wait' : 'hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm'
+          className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-theme-bg-primary border border-theme-border-default text-theme-text-secondary text-sm font-semibold rounded-xl transition-all duration-200 ${
+            isExporting ? 'opacity-70 cursor-wait' : 'hover:bg-theme-bg-hover hover:text-theme-text-primary hover:border-theme-border-strong'
           }`}
         >
           {isExporting ? (
             <>
-              <Loader2 size={18} className="text-blue-500 animate-spin" />
+              <Loader2 size={18} className="text-accent-primary animate-spin" />
               <span>Export {exportProgress.current}/{exportProgress.total}</span>
             </>
           ) : (
             <>
-              <Download size={18} className="text-slate-500" />
+              <Download size={18} className="text-theme-text-tertiary" />
               <span>Télécharger PDF</span>
             </>
           )}
         </button>
 
-        {/* Zoom control - aligned left with dropdown */}
+        {/* Zoom control */}
         <div className="flex items-center pt-1">
           {onZoomChange ? (
             <ZoomControl zoom={zoom} onZoomChange={onZoomChange} />
@@ -461,7 +465,7 @@ export const FolioPanel = memo(function FolioPanel({
 });
 
 /**
- * Single folio item with edit/delete buttons - Modern design
+ * Single folio item with edit/delete buttons - Linear Style
  */
 function FolioItem({
   folio,
@@ -485,16 +489,20 @@ function FolioItem({
       className={`
         group relative rounded-xl p-2 cursor-pointer transition-all duration-200
         ${isActive
-          ? 'bg-gradient-to-br from-blue-50 to-indigo-50 ring-2 ring-blue-500 shadow-md shadow-blue-500/20'
-          : 'hover:bg-slate-50 ring-1 ring-slate-200/60 hover:ring-slate-300 hover:shadow-md'
+          ? 'bg-accent-100 ring-2 ring-accent-primary shadow-glow'
+          : 'hover:bg-theme-bg-hover ring-1 ring-theme-border-subtle hover:ring-accent-primary/50'
         }
       `}
       onClick={onClick}
       data-folio-thumbnail={folio.id}
     >
       {/* Thumbnail */}
-      <div className="relative mx-auto bg-white rounded-lg shadow-sm border border-slate-200/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
-        style={{ width: 120, height: 170 }}
+      <div className="relative mx-auto bg-white rounded-lg shadow-dark-sm border border-theme-border-subtle overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
+        style={{
+          width: folio.orientation === 'landscape' ? 140 : 120,
+          height: folio.orientation === 'landscape' ? 100 : 170,
+          transition: 'width 0.3s ease, height 0.3s ease',
+        }}
       >
         {thumbnail?.dataUrl ? (
           <img
@@ -503,16 +511,16 @@ function FolioItem({
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-            <svg className="w-8 h-8 text-slate-300 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-theme-bg-tertiary to-theme-bg-elevated">
+            <svg className="w-8 h-8 text-theme-text-muted mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
             </svg>
-            <span className="text-slate-400 text-xs font-medium">Page {folio.index + 1}</span>
+            <span className="text-theme-text-tertiary text-xs font-medium">Page {folio.index + 1}</span>
           </div>
         )}
 
-        {/* Page number badge - Modern pill style */}
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur-sm text-white text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-lg">
+        {/* Page number badge - Linear style */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-theme-bg-primary/90 backdrop-blur-sm text-theme-text-primary text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-dark-md border border-theme-border-subtle">
           {folio.index + 1}
         </div>
 
@@ -526,7 +534,7 @@ function FolioItem({
         )}
       </div>
 
-      {/* Hover actions - Modern floating buttons */}
+      {/* Hover actions - Linear floating buttons */}
       <div
         className={`
           absolute -top-1 -right-1 flex gap-1 p-1 transition-all duration-200
@@ -537,10 +545,10 @@ function FolioItem({
         <button
           type="button"
           onClick={onEdit}
-          className="p-1.5 bg-white rounded-lg shadow-md hover:bg-blue-50 hover:shadow-lg transition-all duration-200 border border-slate-200"
+          className="p-1.5 bg-theme-bg-elevated rounded-lg shadow-dark-md hover:bg-accent-100 hover:shadow-glow transition-all duration-200 border border-theme-border-default"
           title="Rotation"
         >
-          <svg className="w-3 h-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-3 h-3 text-accent-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
@@ -548,10 +556,10 @@ function FolioItem({
           <button
             type="button"
             onClick={onDelete}
-            className="p-1.5 bg-white rounded-lg shadow-md hover:bg-red-50 hover:shadow-lg transition-all duration-200 border border-slate-200"
+            className="p-1.5 bg-theme-bg-elevated rounded-lg shadow-dark-md hover:bg-red-500/10 hover:shadow-lg transition-all duration-200 border border-theme-border-default"
             title="Supprimer"
           >
-            <Trash2 size={12} className="text-red-500" />
+            <Trash2 size={12} className="text-red-400" />
           </button>
         )}
       </div>

@@ -25,6 +25,7 @@ import { useFolioStore } from '../stores/folioStore';
 import type { HeaderFooterContent, HeaderFooterSegment } from '../types/headerFooter';
 import { isModalCurrentlyOpen } from '../utils/modalState';
 import { TIMING, UPDATE_TAGS } from '../core/constants';
+import { emitFolioRenderComplete, emitAllFoliosRenderComplete } from '../events/thumbnailEvents';
 
 export interface HeaderFooterPluginProps {
   /** Whether to automatically inject headers/footers */
@@ -340,8 +341,11 @@ export function HeaderFooterPlugin({
 
         lastFolioCountRef.current = totalPages;
 
+        const syncedFolioIds: string[] = [];
+
         folioNodes.forEach((folioNode, index) => {
           const pageNumber = index + 1;
+          const folioId = folioNode.getFolioId();
 
           // Check if folio already has header/footer to avoid duplicates
           const children = folioNode.getChildren();
@@ -360,10 +364,20 @@ export function HeaderFooterPlugin({
 
           injectHeader(folioNode, pageNumber, totalPages);
           injectFooter(folioNode, pageNumber, totalPages);
+
+          syncedFolioIds.push(folioId);
         });
 
         console.log('[HeaderFooterPlugin] Synced headers/footers for', folioNodes.length, 'folios');
         isSyncingRef.current = false;
+
+        // Emit events after sync is complete (after a small delay for DOM to update)
+        setTimeout(() => {
+          syncedFolioIds.forEach((folioId) => {
+            emitFolioRenderComplete(folioId);
+          });
+          emitAllFoliosRenderComplete(syncedFolioIds);
+        }, 50);
       },
       { tag: UPDATE_TAGS.HEADER_FOOTER_SYNC, discrete: true }
     );

@@ -134,6 +134,7 @@ export const FolioThumbnail = memo(function FolioThumbnail({
         style={{
           width: dimensions.WIDTH,
           height: dimensions.HEIGHT,
+          transition: 'width 0.3s ease, height 0.3s ease',
         }}
       >
         {thumbnailDataUrl ? (

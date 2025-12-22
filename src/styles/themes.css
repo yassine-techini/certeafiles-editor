@@ -1,0 +1,550 @@
+/**
+ * CerteaFiles Editor - Multi-Theme System
+ * Supports: Amethyst, Sapphire, Aqua, Emerald themes
+ * Each theme has dark and light variants
+ */
+
+/* ===== Base Variables (shared across all themes) ===== */
+:root {
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+  --transition-spring: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Z-Index */
+  --z-dropdown: 100;
+  --z-modal: 200;
+  --z-tooltip: 300;
+  --z-toast: 400;
+
+  /* Blur */
+  --blur-sm: 4px;
+  --blur-md: 8px;
+  --blur-lg: 16px;
+}
+
+/* ========================================
+   AMETHYST THEME (Default)
+   Modern, dark-first design with purple accent
+   ======================================== */
+
+/* Amethyst Dark (Default) */
+[data-theme="amethyst"],
+[data-theme="amethyst-dark"],
+:root {
+  /* Background Colors */
+  --bg-primary: #0d0d0d;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #262626;
+  --bg-elevated: #2a2a2a;
+  --bg-hover: #333333;
+  --bg-active: #3d3d3d;
+
+  /* Accent Colors */
+  --accent-primary: #5e5ce6;
+  --accent-secondary: #8b5cf6;
+  --accent-tertiary: #a78bfa;
+  --accent-gradient: linear-gradient(135deg, #5e5ce6 0%, #8b5cf6 100%);
+
+  /* Text Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1a1;
+  --text-tertiary: #6b6b6b;
+  --text-muted: #525252;
+  --text-inverted: #0d0d0d;
+
+  /* Border Colors */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-accent: rgba(94, 92, 230, 0.5);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 20px rgba(94, 92, 230, 0.3);
+  --shadow-glow-strong: 0 0 30px rgba(94, 92, 230, 0.5);
+
+  /* Status Colors */
+  --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.1);
+  --success-border: rgba(34, 197, 94, 0.2);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --warning-border: rgba(245, 158, 11, 0.2);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-border: rgba(239, 68, 68, 0.2);
+  --info: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.1);
+  --info-border: rgba(59, 130, 246, 0.2);
+
+  color-scheme: dark;
+}
+
+/* Amethyst Light */
+[data-theme="amethyst-light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f3f4f6;
+  --bg-active: #e5e7eb;
+
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --text-muted: #d1d5db;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --border-accent: rgba(94, 92, 230, 0.3);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.2);
+  --shadow-glow: 0 0 20px rgba(94, 92, 230, 0.15);
+  --shadow-glow-strong: 0 0 30px rgba(94, 92, 230, 0.25);
+
+  color-scheme: light;
+}
+
+/* ========================================
+   SAPPHIRE THEME
+   Clean, Material Design inspired
+   ======================================== */
+
+/* Sapphire Light (Default for Sapphire theme) */
+[data-theme="sapphire"],
+[data-theme="sapphire-light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #f1f3f4;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e8eaed;
+  --bg-active: #dadce0;
+
+  /* Google Blue accent */
+  --accent-primary: #1a73e8;
+  --accent-secondary: #4285f4;
+  --accent-tertiary: #8ab4f8;
+  --accent-gradient: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+
+  --text-primary: #202124;
+  --text-secondary: #5f6368;
+  --text-tertiary: #80868b;
+  --text-muted: #bdc1c6;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: #dadce0;
+  --border-strong: #bdc1c6;
+  --border-accent: rgba(26, 115, 232, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.1);
+  --shadow-md: 0 1px 3px rgba(60, 64, 67, 0.15), 0 4px 8px rgba(60, 64, 67, 0.1);
+  --shadow-lg: 0 1px 3px rgba(60, 64, 67, 0.15), 0 8px 16px rgba(60, 64, 67, 0.15);
+  --shadow-xl: 0 1px 3px rgba(60, 64, 67, 0.15), 0 16px 32px rgba(60, 64, 67, 0.2);
+  --shadow-glow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+  --shadow-glow-strong: 0 0 0 3px rgba(26, 115, 232, 0.3);
+
+  --success: #34a853;
+  --success-bg: rgba(52, 168, 83, 0.1);
+  --success-border: rgba(52, 168, 83, 0.2);
+  --warning: #fbbc04;
+  --warning-bg: rgba(251, 188, 4, 0.1);
+  --warning-border: rgba(251, 188, 4, 0.2);
+  --error: #ea4335;
+  --error-bg: rgba(234, 67, 53, 0.1);
+  --error-border: rgba(234, 67, 53, 0.2);
+  --info: #4285f4;
+  --info-bg: rgba(66, 133, 244, 0.1);
+  --info-border: rgba(66, 133, 244, 0.2);
+
+  color-scheme: light;
+}
+
+/* Sapphire Dark */
+[data-theme="sapphire-dark"] {
+  --bg-primary: #202124;
+  --bg-secondary: #292a2d;
+  --bg-tertiary: #35363a;
+  --bg-elevated: #3c4043;
+  --bg-hover: #3c4043;
+  --bg-active: #4d5156;
+
+  --accent-primary: #8ab4f8;
+  --accent-secondary: #aecbfa;
+  --accent-tertiary: #c6dafc;
+  --accent-gradient: linear-gradient(135deg, #8ab4f8 0%, #aecbfa 100%);
+
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-tertiary: #80868b;
+  --text-muted: #5f6368;
+  --text-inverted: #202124;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: #5f6368;
+  --border-strong: #80868b;
+  --border-accent: rgba(138, 180, 248, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 16px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 1px 3px rgba(0, 0, 0, 0.4), 0 16px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+  --shadow-glow-strong: 0 0 0 3px rgba(138, 180, 248, 0.3);
+
+  color-scheme: dark;
+}
+
+/* ========================================
+   AQUA THEME
+   Minimal, content-focused design
+   ======================================== */
+
+/* Aqua Light (Default) */
+[data-theme="aqua"],
+[data-theme="aqua-light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #fbfbfa;
+  --bg-tertiary: #f7f6f3;
+  --bg-elevated: #ffffff;
+  --bg-hover: #efefef;
+  --bg-active: #e3e2e0;
+
+  /* Notion uses subtle gray/brown accent */
+  --accent-primary: #2eaadc;
+  --accent-secondary: #37352f;
+  --accent-tertiary: #787774;
+  --accent-gradient: linear-gradient(135deg, #2eaadc 0%, #0077b5 100%);
+
+  --text-primary: #37352f;
+  --text-secondary: #787774;
+  --text-tertiary: #9b9a97;
+  --text-muted: #c4c4c4;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(55, 53, 47, 0.06);
+  --border-default: rgba(55, 53, 47, 0.09);
+  --border-strong: rgba(55, 53, 47, 0.16);
+  --border-accent: rgba(46, 170, 220, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 0 2px rgba(46, 170, 220, 0.15);
+  --shadow-glow-strong: 0 0 0 3px rgba(46, 170, 220, 0.25);
+
+  --success: #0f7b6c;
+  --success-bg: rgba(15, 123, 108, 0.1);
+  --success-border: rgba(15, 123, 108, 0.2);
+  --warning: #dfab01;
+  --warning-bg: rgba(223, 171, 1, 0.1);
+  --warning-border: rgba(223, 171, 1, 0.2);
+  --error: #e03e3e;
+  --error-bg: rgba(224, 62, 62, 0.1);
+  --error-border: rgba(224, 62, 62, 0.2);
+  --info: #2eaadc;
+  --info-bg: rgba(46, 170, 220, 0.1);
+  --info-border: rgba(46, 170, 220, 0.2);
+
+  color-scheme: light;
+}
+
+/* Aqua Dark */
+[data-theme="aqua-dark"] {
+  --bg-primary: #191919;
+  --bg-secondary: #202020;
+  --bg-tertiary: #2f2f2f;
+  --bg-elevated: #373737;
+  --bg-hover: #373737;
+  --bg-active: #454545;
+
+  --accent-primary: #529cca;
+  --accent-secondary: #9b9a97;
+  --accent-tertiary: #787774;
+  --accent-gradient: linear-gradient(135deg, #529cca 0%, #2eaadc 100%);
+
+  --text-primary: rgba(255, 255, 255, 0.9);
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-tertiary: rgba(255, 255, 255, 0.4);
+  --text-muted: rgba(255, 255, 255, 0.2);
+  --text-inverted: #191919;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-accent: rgba(82, 156, 202, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 0 2px rgba(82, 156, 202, 0.2);
+  --shadow-glow-strong: 0 0 0 3px rgba(82, 156, 202, 0.3);
+
+  color-scheme: dark;
+}
+
+/* ========================================
+   EMERALD THEME
+   Professional, high contrast
+   ======================================== */
+
+/* Emerald Light */
+[data-theme="emerald"],
+[data-theme="emerald-light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eaeef2;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eaeef2;
+  --bg-active: #d0d7de;
+
+  /* GitHub green accent */
+  --accent-primary: #2da44e;
+  --accent-secondary: #1f883d;
+  --accent-tertiary: #4ac26b;
+  --accent-gradient: linear-gradient(135deg, #2da44e 0%, #1f883d 100%);
+
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-tertiary: #8c959f;
+  --text-muted: #b1bac4;
+  --text-inverted: #ffffff;
+
+  --border-subtle: #d0d7de;
+  --border-default: #d0d7de;
+  --border-strong: #8c959f;
+  --border-accent: rgba(45, 164, 78, 0.4);
+
+  --shadow-sm: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --shadow-md: 0 3px 6px rgba(140, 149, 159, 0.15);
+  --shadow-lg: 0 8px 24px rgba(140, 149, 159, 0.2);
+  --shadow-xl: 0 12px 28px rgba(140, 149, 159, 0.3);
+  --shadow-glow: 0 0 0 3px rgba(45, 164, 78, 0.3);
+  --shadow-glow-strong: 0 0 0 3px rgba(45, 164, 78, 0.4);
+
+  --success: #1a7f37;
+  --success-bg: rgba(26, 127, 55, 0.1);
+  --success-border: rgba(26, 127, 55, 0.2);
+  --warning: #9a6700;
+  --warning-bg: rgba(154, 103, 0, 0.1);
+  --warning-border: rgba(154, 103, 0, 0.2);
+  --error: #cf222e;
+  --error-bg: rgba(207, 34, 46, 0.1);
+  --error-border: rgba(207, 34, 46, 0.2);
+  --info: #0969da;
+  --info-bg: rgba(9, 105, 218, 0.1);
+  --info-border: rgba(9, 105, 218, 0.2);
+
+  color-scheme: light;
+}
+
+/* Emerald Dark */
+[data-theme="emerald-dark"] {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --bg-elevated: #30363d;
+  --bg-hover: #30363d;
+  --bg-active: #484f58;
+
+  --accent-primary: #3fb950;
+  --accent-secondary: #238636;
+  --accent-tertiary: #56d364;
+  --accent-gradient: linear-gradient(135deg, #3fb950 0%, #238636 100%);
+
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-tertiary: #6e7681;
+  --text-muted: #484f58;
+  --text-inverted: #0d1117;
+
+  --border-subtle: #21262d;
+  --border-default: #30363d;
+  --border-strong: #484f58;
+  --border-accent: rgba(63, 185, 80, 0.4);
+
+  --shadow-sm: 0 0 transparent;
+  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 12px 28px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 0 3px rgba(63, 185, 80, 0.3);
+  --shadow-glow-strong: 0 0 0 3px rgba(63, 185, 80, 0.4);
+
+  color-scheme: dark;
+}
+
+/* ========================================
+   GLOBAL STYLES
+   ======================================== */
+
+html {
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+/* Text selection */
+::selection {
+  background: var(--accent-primary);
+  color: var(--text-inverted);
+  opacity: 0.3;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Thin scrollbar variant */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+/* Hidden scrollbar but still scrollable */
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Glassmorphism utilities */
+.glass {
+  background: var(--bg-secondary);
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  opacity: 0.95;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow effect on hover */
+.glow-on-hover {
+  transition: box-shadow var(--transition-base);
+}
+
+.glow-on-hover:hover {
+  box-shadow: var(--shadow-glow);
+}
+
+/* Panel transitions */
+.panel-transition {
+  transition: width var(--transition-slow),
+              opacity var(--transition-base),
+              transform var(--transition-base);
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: var(--shadow-glow);
+  }
+  50% {
+    box-shadow: var(--shadow-glow-strong);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 200ms ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 200ms ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 200ms ease-out;
+}
+
+.animate-glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}

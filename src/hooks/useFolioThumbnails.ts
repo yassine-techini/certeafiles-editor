@@ -9,6 +9,7 @@ import html2canvas from 'html2canvas';
 import { useFolioStore } from '../stores/folioStore';
 import { THUMBNAIL_CONSTANTS } from '../utils/a4-constants';
 import type { FolioOrientation } from '../types/folio';
+import { onAllFoliosRenderComplete } from '../events/thumbnailEvents';
 
 export interface ThumbnailData {
   folioId: string;
@@ -44,6 +45,27 @@ export interface UseFolioThumbnailsReturn {
 }
 
 /**
+ * Check if the folio content is ready for capture
+ * Verifies headers, footers, and content are present
+ */
+function isContentReady(element: HTMLElement): boolean {
+  // Check for header and footer containers
+  const hasHeader = element.querySelector('[data-header-container], .folio-header, header') !== null;
+  const hasFooter = element.querySelector('[data-footer-container], .folio-footer, footer') !== null;
+
+  // Check if there's actual content
+  const contentArea = element.querySelector('.folio-content, .editor-input, [contenteditable]');
+  const contentText = contentArea?.textContent?.trim() || '';
+  const hasVisibleContent = contentText.length > 0;
+
+  // For debugging (disabled in production to reduce console noise)
+  // console.log('[Thumbnail] Content ready check:', { hasHeader, hasFooter, hasVisibleContent });
+
+  // Content is ready if we have headers/footers OR if there's visible content
+  return (hasHeader && hasFooter) || hasVisibleContent;
+}
+
+/**
  * Generate thumbnail from DOM element using html2canvas for accurate capture
  * This captures the actual visual representation of the page
  */
@@ -55,6 +77,13 @@ async function generateThumbnailFromDOMAsync(
   const dimensions = isPortrait
     ? THUMBNAIL_CONSTANTS.PORTRAIT
     : THUMBNAIL_CONSTANTS.LANDSCAPE;
+
+  // Wait for fonts to be loaded before capturing
+  try {
+    await document.fonts.ready;
+  } catch {
+    // Fonts API might not be available, continue anyway
+  }
 
   // Extract preview text from the element
   const textElements = Array.from(
@@ -81,6 +110,12 @@ async function generateThumbnailFromDOMAsync(
       height: element.scrollHeight,
       windowWidth: element.scrollWidth,
       windowHeight: element.scrollHeight,
+      // Reset transforms for accurate capture
+      onclone: (_clonedDoc, clonedElement) => {
+        // Remove any transforms that might affect positioning
+        clonedElement.style.transform = 'none';
+        clonedElement.style.position = 'relative';
+      },
     });
 
     // Create final thumbnail canvas with correct dimensions
@@ -416,7 +451,7 @@ export function useFolioThumbnails(
   const regenerateFromDOM = useCallback(async () => {
     if (folios.length === 0) return;
 
-    console.log('[Thumbnail] regenerateFromDOM called, capturing thumbnails for', folios.length, 'folios');
+    // console.log('[Thumbnail] regenerateFromDOM called, capturing thumbnails for', folios.length, 'folios');
     setIsLoading(true);
     setProgress(0);
 
@@ -496,7 +531,7 @@ export function useFolioThumbnails(
     setThumbnails(newThumbnails);
     setIsLoading(false);
     setProgress(1);
-    console.log(`[Thumbnail] regenerateFromDOM completed: ${capturedCount}/${folios.length} thumbnails captured`);
+    // console.log(`[Thumbnail] regenerateFromDOM completed: ${capturedCount}/${folios.length} thumbnails captured`);
   }, [folios]);
 
   // Cleanup debounce timer on unmount
@@ -516,25 +551,38 @@ export function useFolioThumbnails(
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     /**
-     * Wait for DOM elements to be present before capturing thumbnails
-     * This is crucial because the folios are synced to the store before the DOM is rendered
+     * Wait for DOM elements to be present AND content to be ready before capturing thumbnails
+     * This is crucial because:
+     * 1. The folios are synced to the store before the DOM is rendered
+     * 2. HeaderFooterPlugin has a 1000ms delay before injecting headers/footers
      */
-    const waitForDOMAndCapture = (attempt = 1, maxAttempts = 10) => {
+    const waitForDOMAndCapture = (attempt = 1, maxAttempts = 15) => {
       if (cancelled) return;
 
       // Check how many folio elements are in the DOM
       const folioElements = document.querySelectorAll('[data-folio-id]');
       const domFolioCount = folioElements.length;
 
-      console.log(`[Thumbnail] Attempt ${attempt}: DOM has ${domFolioCount}/${folios.length} folio elements`);
+      // Check if any element has content ready (headers/footers present)
+      let hasReadyContent = false;
+      folioElements.forEach((el) => {
+        if (isContentReady(el as HTMLElement)) {
+          hasReadyContent = true;
+        }
+      });
 
-      // If we have at least some DOM elements or we've tried enough times, start capturing
-      if (domFolioCount > 0 || attempt >= maxAttempts) {
+      // console.log(`[Thumbnail] Attempt ${attempt}: DOM has ${domFolioCount}/${folios.length} folio elements, content ready: ${hasReadyContent}`);
+
+      // Start capturing if:
+      // 1. We have DOM elements AND content is ready, OR
+      // 2. We've tried enough times
+      if ((domFolioCount > 0 && hasReadyContent) || attempt >= maxAttempts) {
         void startThumbnailCapture();
       } else {
-        // Wait longer and retry - exponential backoff
-        const delay = Math.min(100 * Math.pow(1.5, attempt - 1), 1000);
-        console.log(`[Thumbnail] DOM not ready, retrying in ${delay}ms...`);
+        // Wait longer and retry - exponential backoff with higher base for header/footer timing
+        // Start at 200ms, grow to max 1500ms (accounting for HeaderFooterPlugin's 1000ms delay)
+        const delay = Math.min(200 * Math.pow(1.3, attempt - 1), 1500);
+        // console.log(`[Thumbnail] Content not ready, retrying in ${delay}ms...`);
         retryTimeoutId = setTimeout(() => waitForDOMAndCapture(attempt + 1, maxAttempts), delay);
       }
     };
@@ -635,12 +683,13 @@ export function useFolioThumbnails(
         setThumbnails(newThumbnails);
         setIsLoading(false);
         setProgress(1);
-        console.log(`[Thumbnail] Completed: ${capturedCount}/${folios.length} thumbnails captured from DOM`);
+        // console.log(`[Thumbnail] Completed: ${capturedCount}/${folios.length} thumbnails captured from DOM`);
       }
     };
 
-    // Start waiting for DOM with initial delay for React render
-    const initialDelay = setTimeout(() => waitForDOMAndCapture(1), 100);
+    // Start waiting for DOM with initial delay for React render AND HeaderFooterPlugin (1000ms stabilization delay)
+    // We wait 1200ms to ensure headers/footers are injected before we start checking
+    const initialDelay = setTimeout(() => waitForDOMAndCapture(1), 1200);
 
     return () => {
       cancelled = true;
@@ -667,6 +716,20 @@ export function useFolioThumbnails(
     });
   }, [folios]);
 
+  // Listen for folio render complete events from HeaderFooterPlugin
+  // This ensures thumbnails are captured AFTER headers/footers are injected
+  useEffect(() => {
+    const unsubscribe = onAllFoliosRenderComplete((_folioIds) => {
+      // console.log(`[Thumbnail] Received render complete event for ${_folioIds.length} folios, triggering regeneration`);
+      // Small delay to ensure DOM is updated
+      setTimeout(() => {
+        void regenerateFromDOM();
+      }, 100);
+    });
+
+    return unsubscribe;
+  }, [regenerateFromDOM]);
+
   return {
     thumbnails,
     generateThumbnail,
@@ -681,6 +744,7 @@ export function useFolioThumbnails(
 
 /**
  * Hook to connect thumbnail generation to editor updates
+ * OPTIMIZED: Only regenerate thumbnails when actual content changes, not on toolbar clicks
  */
 export function useFolioThumbnailUpdater(
   editor: LexicalEditor | null,
@@ -690,25 +754,54 @@ export function useFolioThumbnailUpdater(
   const { generateThumbnail, generateAllThumbnails } = thumbnailsHook;
   const activeFolioId = useFolioStore((state) => state.activeFolioId);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastContentHashRef = useRef<string>('');
+  const isGeneratingRef = useRef(false);
 
-  // Generate thumbnails on editor changes
+  // Generate thumbnails on editor changes - ONLY when content actually changes
   useEffect(() => {
     if (!editor || !options.autoUpdate) return;
 
-    const unregister = editor.registerUpdateListener(({ tags }) => {
-      // Skip if this is a collaboration update or initial load
+    const unregister = editor.registerUpdateListener(({ editorState, tags, dirtyElements, dirtyLeaves }) => {
+      // Skip if this is a collaboration update, history merge, or selection-only change
       if (tags.has('collaboration') || tags.has('history-merge')) return;
 
-      // Debounce updates
+      // Skip if nothing actually changed (just selection or focus)
+      if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
+
+      // Skip if already generating to avoid multiple concurrent html2canvas calls
+      if (isGeneratingRef.current) return;
+
+      // Compute a simple content hash to detect actual content changes
+      const contentHash = editorState.read(() => {
+        const root = editorState._nodeMap.get('root');
+        if (root) {
+          // Use text content length + first 100 chars as a simple hash
+          const text = root.getTextContent();
+          return `${text.length}:${text.slice(0, 100)}`;
+        }
+        return '';
+      });
+
+      // Skip if content hasn't actually changed
+      if (contentHash === lastContentHashRef.current) return;
+      lastContentHashRef.current = contentHash;
+
+      // Debounce updates with a longer delay to reduce frequency
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
 
+      // Use a longer debounce (2 seconds) to batch multiple rapid changes
       debounceTimerRef.current = setTimeout(() => {
-        if (activeFolioId) {
+        if (activeFolioId && !isGeneratingRef.current) {
+          isGeneratingRef.current = true;
           generateThumbnail(activeFolioId, editor);
+          // Reset flag after a delay to allow next generation
+          setTimeout(() => {
+            isGeneratingRef.current = false;
+          }, 1000);
         }
-      }, options.debounceMs ?? 500);
+      }, options.debounceMs ?? 2000); // Increased default debounce to 2 seconds
     });
 
     return () => {
@@ -719,13 +812,13 @@ export function useFolioThumbnailUpdater(
     };
   }, [editor, activeFolioId, generateThumbnail, options.autoUpdate, options.debounceMs]);
 
-  // Generate all thumbnails on initial load
+  // Generate all thumbnails on initial load - only once
   useEffect(() => {
     if (editor) {
-      // Small delay to ensure editor is ready
+      // Longer delay to ensure editor and content are fully ready
       setTimeout(() => {
         generateAllThumbnails(editor);
-      }, 100);
+      }, 500);
     }
   }, [editor, generateAllThumbnails]);
 

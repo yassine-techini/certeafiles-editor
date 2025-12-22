@@ -1,0 +1,14 @@
+name = "certeafiles-yjs-server"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects for per-room state
+[durable_objects]
+bindings = [
+  { name = "YJS_ROOM", class_name = "YjsServer" }
+]
+
+# Environment variables
+[vars]
+CORS_ORIGIN = "*"

@@ -27,11 +27,13 @@ import {
   CheckCircle,
   History,
   Share2,
+  FilePlus,
 } from 'lucide-react';
 import type { EditorState, LexicalEditor } from 'lexical';
 import { CerteafilesEditor } from '../../components/Editor/CerteafilesEditor';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FolioPanel } from '../../components/Folios';
+import { ThemeSelector } from '../../components/ThemeSelector/ThemeSelector';
 import { useCollaboration } from '../../hooks/useCollaboration';
 import { useFolioThumbnails } from '../../hooks/useFolioThumbnails';
 import { useRevisionStore } from '../../stores/revisionStore';
@@ -658,6 +660,24 @@ export function PlaygroundPage() {
     });
   }, [shareableLink]);
 
+  // Create a new document with unique ID and navigate to it
+  const handleCreateNewDocument = useCallback(() => {
+    const newDocId = generateDocumentId();
+    // Clear folios and reset state
+    useFolioStore.getState().clear();
+    useHeaderFooterStore.getState().resetAllToTemplateDefaults();
+    setSelectedDocument('');
+    setInitialContent('');
+    setInitialEditorState(undefined);
+    // Navigate to new document URL with collaboration enabled
+    setSearchParams({ docId: newDocId });
+    setEnableCollaboration(true);
+    // Force editor remount
+    setTimeout(() => {
+      setEditorKey((k) => k + 1);
+    }, 50);
+  }, [setSearchParams]);
+
   // Folio thumbnails
   const { thumbnails, isLoading: isLoadingThumbnails, progress: thumbnailProgress } = useFolioThumbnails();
 
@@ -899,6 +919,19 @@ export function PlaygroundPage() {
         <Link to="/" className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
           <Home className="w-5 h-5 text-slate-600" />
         </Link>
+
+        {/* NEW DOCUMENT BUTTON */}
+        <button
+          onClick={handleCreateNewDocument}
+          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          title="Créer un nouveau document avec un lien unique pour la collaboration"
+        >
+          <FilePlus className="w-4 h-4" />
+          <span>Nouveau document</span>
+        </button>
+
+        {/* THEME SELECTOR - Design theme switcher */}
+        <ThemeSelector compact={false} />
 
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">

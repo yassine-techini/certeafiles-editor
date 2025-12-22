@@ -2,7 +2,7 @@
  * EditorToolbar - Main toolbar for the WYSIWYG editor
  * Per Constitution Section 3.1 - Simplified single-line design
  */
-import { useCallback, useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
   $createParagraphNode,
@@ -197,10 +197,20 @@ export function EditorToolbar({
   const [textColor, setTextColor] = useState('#000000');
   const [highlightColor, setHighlightColor] = useState('transparent');
 
-  // Overflow detection for responsive toolbar
+  // Helper to close all dropdowns except one
+  const closeAllDropdownsExcept = useCallback((except?: string) => {
+    if (except !== 'block') setShowBlockDropdown(false);
+    if (except !== 'font') setShowFontDropdown(false);
+    if (except !== 'fontSize') setShowFontSizeDropdown(false);
+    if (except !== 'textColor') setShowTextColorDropdown(false);
+    if (except !== 'highlight') setShowHighlightDropdown(false);
+    if (except !== 'align') setShowAlignDropdown(false);
+    if (except !== 'more') setShowMoreDropdown(false);
+  }, []);
+
+  // Toolbar refs
   const toolbarRef = useRef<HTMLDivElement>(null);
   const buttonsContainerRef = useRef<HTMLDivElement>(null);
-  const [hiddenButtons, setHiddenButtons] = useState<string[]>([]);
 
   // Update toolbar state based on selection
   const updateToolbar = useCallback(() => {
@@ -289,7 +299,13 @@ export function EditorToolbar({
     const anyDropdownOpen = showBlockDropdown || showFontDropdown || showFontSizeDropdown || showTextColorDropdown || showHighlightDropdown || showAlignDropdown || showMoreDropdown;
     if (!anyDropdownOpen) return;
 
-    const handleClickOutside = () => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if click is inside the toolbar - if so, let the button handlers manage state
+      const toolbar = toolbarRef.current;
+      if (toolbar && toolbar.contains(e.target as Node)) {
+        return;
+      }
+      // Click outside toolbar - close all dropdowns
       setShowBlockDropdown(false);
       setShowFontDropdown(false);
       setShowFontSizeDropdown(false);
@@ -298,50 +314,10 @@ export function EditorToolbar({
       setShowAlignDropdown(false);
       setShowMoreDropdown(false);
     };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    // Use mousedown instead of click to fire before the button's onClick
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showBlockDropdown, showFontDropdown, showFontSizeDropdown, showTextColorDropdown, showHighlightDropdown, showAlignDropdown, showMoreDropdown]);
-
-  // Detect hidden buttons using ResizeObserver
-  useLayoutEffect(() => {
-    const container = buttonsContainerRef.current;
-    if (!container) return;
-
-    const checkOverflow = () => {
-      const containerRect = container.getBoundingClientRect();
-      const containerRight = containerRect.right - 60; // Reserve space for More button
-      const hidden: string[] = [];
-
-      // Get all toolbar items with data-toolbar-id
-      const items = container.querySelectorAll('[data-toolbar-id]');
-      items.forEach((item) => {
-        const itemRect = item.getBoundingClientRect();
-        const id = item.getAttribute('data-toolbar-id');
-        if (id && itemRect.right > containerRight) {
-          hidden.push(id);
-        }
-      });
-
-      setHiddenButtons(hidden);
-    };
-
-    // Initial check
-    checkOverflow();
-
-    // Use ResizeObserver to detect size changes
-    const resizeObserver = new ResizeObserver(() => {
-      checkOverflow();
-    });
-    resizeObserver.observe(container);
-
-    // Also listen to window resize
-    window.addEventListener('resize', checkOverflow);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', checkOverflow);
-    };
-  }, []);
 
   // Format text command handlers
   const formatBold = useCallback(() => {
@@ -556,10 +532,14 @@ export function EditorToolbar({
   };
 
   return (
-    <div className={`editor-toolbar-wrapper ${className}`} ref={toolbarRef}>
-      <div className="flex items-center gap-1 px-3 py-2">
-        {/* Scrollable toolbar content */}
-        <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0" ref={buttonsContainerRef}>
+    <div className={`editor-toolbar-wrapper ${className}`} ref={toolbarRef} style={{ overflow: 'visible' }}>
+      <div className="flex items-center gap-1 px-2 py-2" style={{ overflow: 'visible' }}>
+        {/* Toolbar content - no overflow hidden to allow dropdowns to show */}
+        <div
+          className="flex items-center gap-1 flex-nowrap"
+          ref={buttonsContainerRef}
+          style={{ overflow: 'visible' }}
+        >
         {/* Undo/Redo */}
         <div data-toolbar-id="undo-redo" className="flex items-center gap-1">
           <ToolbarButton onClick={handleUndo} disabled={!canUndo} title="Annuler (Ctrl+Z)">
@@ -579,6 +559,7 @@ export function EditorToolbar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              closeAllDropdownsExcept('block');
               setShowBlockDropdown(!showBlockDropdown);
             }}
             className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 min-w-[120px] justify-between transition-all duration-150"
@@ -589,7 +570,7 @@ export function EditorToolbar({
           </button>
 
           {showBlockDropdown && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[160px] py-1.5 backdrop-blur-sm">
+            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[160px] py-1.5 backdrop-blur-sm" style={{ zIndex: 9999 }}>
               <button
                 type="button"
                 onClick={formatParagraph}
@@ -640,6 +621,7 @@ export function EditorToolbar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              closeAllDropdownsExcept('font');
               setShowFontDropdown(!showFontDropdown);
             }}
             className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 min-w-[110px] justify-between transition-all duration-150"
@@ -650,7 +632,7 @@ export function EditorToolbar({
           </button>
 
           {showFontDropdown && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-[160px] py-1.5 max-h-[300px] overflow-y-auto">
+            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[160px] py-1.5 max-h-[300px] overflow-y-auto" style={{ zIndex: 9999 }}>
               {FONT_FAMILIES.map((font) => (
                 <button
                   key={font.value}
@@ -683,6 +665,7 @@ export function EditorToolbar({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                closeAllDropdownsExcept('fontSize');
                 setShowFontSizeDropdown(!showFontSizeDropdown);
               }}
               className="flex items-center gap-1 px-2 py-1 text-sm font-medium text-slate-700 min-w-[50px] justify-center"
@@ -691,7 +674,7 @@ export function EditorToolbar({
               <span>{parseInt(fontSize)}px</span>
             </button>
             {showFontSizeDropdown && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 max-h-[200px] overflow-y-auto">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 max-h-[200px] overflow-y-auto" style={{ zIndex: 9999 }}>
                 {FONT_SIZES.map((size) => (
                   <button
                     key={size.value}
@@ -739,6 +722,7 @@ export function EditorToolbar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              closeAllDropdownsExcept('textColor');
               setShowTextColorDropdown(!showTextColorDropdown);
             }}
             className="flex flex-col items-center p-1.5 hover:bg-gray-100 rounded transition-colors"
@@ -751,7 +735,7 @@ export function EditorToolbar({
             />
           </button>
           {showTextColorDropdown && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-2">
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2" style={{ zIndex: 9999 }}>
               <div className="grid grid-cols-5 gap-1">
                 {TEXT_COLORS.map((color) => (
                   <button
@@ -776,6 +760,7 @@ export function EditorToolbar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              closeAllDropdownsExcept('highlight');
               setShowHighlightDropdown(!showHighlightDropdown);
             }}
             className="flex items-center gap-0.5 p-1.5 hover:bg-gray-100 rounded transition-colors"
@@ -785,7 +770,7 @@ export function EditorToolbar({
             <ChevronDown size={12} />
           </button>
           {showHighlightDropdown && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-2">
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2" style={{ zIndex: 9999 }}>
               <div className="grid grid-cols-5 gap-1">
                 {HIGHLIGHT_COLORS.map((color) => (
                   <button
@@ -814,6 +799,7 @@ export function EditorToolbar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              closeAllDropdownsExcept('align');
               setShowAlignDropdown(!showAlignDropdown);
             }}
             className="flex items-center gap-0.5 p-1.5 hover:bg-gray-100 rounded transition-colors"
@@ -823,7 +809,7 @@ export function EditorToolbar({
             <ChevronDown size={12} />
           </button>
           {showAlignDropdown && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1" style={{ zIndex: 9999 }}>
               <button
                 type="button"
                 onClick={() => formatAlign('left')}
@@ -934,6 +920,7 @@ export function EditorToolbar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              closeAllDropdownsExcept('more');
               setShowMoreDropdown(!showMoreDropdown);
             }}
             className="flex items-center gap-1 p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-500"
@@ -945,148 +932,6 @@ export function EditorToolbar({
 
           {showMoreDropdown && (
             <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl py-1 min-w-[200px] max-h-[400px] overflow-y-auto" style={{ zIndex: 9999 }}>
-              {/* Hidden toolbar buttons section */}
-              {hiddenButtons.length > 0 && (
-                <>
-                  <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Barre d'outils</div>
-
-                  {hiddenButtons.includes('text-format') && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => { formatBold(); setShowMoreDropdown(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isBold ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <Bold size={16} />
-                        Gras
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { formatItalic(); setShowMoreDropdown(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isItalic ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <Italic size={16} />
-                        Italique
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { formatUnderline(); setShowMoreDropdown(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isUnderline ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <Underline size={16} />
-                        Souligné
-                      </button>
-                    </>
-                  )}
-
-                  {hiddenButtons.includes('alignment') && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => formatAlign('left')}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'left' ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <AlignLeft size={16} />
-                        Aligner à gauche
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => formatAlign('center')}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'center' ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <AlignCenter size={16} />
-                        Centrer
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => formatAlign('right')}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'right' ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <AlignRight size={16} />
-                        Aligner à droite
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => formatAlign('justify')}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${alignment === 'justify' ? 'bg-blue-50 text-blue-700' : ''}`}
-                      >
-                        <AlignJustify size={16} />
-                        Justifier
-                      </button>
-                    </>
-                  )}
-
-                  {hiddenButtons.includes('list') && (
-                    <button
-                      type="button"
-                      onClick={() => { formatBulletList(); setShowMoreDropdown(false); }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${blockType === 'bullet' ? 'bg-blue-50 text-blue-700' : ''}`}
-                    >
-                      <List size={16} />
-                      Liste à puces
-                    </button>
-                  )}
-
-                  {hiddenButtons.includes('link') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const url = window.prompt('URL du lien:');
-                        if (url) {
-                          editor.update(() => {
-                            const selection = $getSelection();
-                            if ($isRangeSelection(selection)) {
-                              const nodes = selection.getNodes();
-                              nodes.forEach((node) => {
-                                const element = editor.getElementByKey(node.getKey());
-                                if (element && element.parentElement) {
-                                  const link = document.createElement('a');
-                                  link.href = url;
-                                  link.target = '_blank';
-                                  link.style.color = '#2563eb';
-                                  link.style.textDecoration = 'underline';
-                                  link.textContent = element.textContent || url;
-                                  element.replaceWith(link);
-                                }
-                              });
-                            }
-                          });
-                        }
-                        setShowMoreDropdown(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
-                    >
-                      <Link2 size={16} />
-                      Insérer un lien
-                    </button>
-                  )}
-
-                  {hiddenButtons.includes('table') && (
-                    <button
-                      type="button"
-                      onClick={() => { handleInsertTable(); setShowMoreDropdown(false); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
-                    >
-                      <Table size={16} />
-                      Insérer un tableau
-                    </button>
-                  )}
-
-                  {hiddenButtons.includes('image') && (
-                    <button
-                      type="button"
-                      onClick={() => { handleInsertImage(); setShowMoreDropdown(false); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100"
-                    >
-                      <Image size={16} />
-                      Insérer une image
-                    </button>
-                  )}
-
-                  <div className="border-t border-gray-200 my-1" />
-                </>
-              )}
-
               <div className="px-2 py-1 text-xs text-gray-400 uppercase tracking-wide">Formatage</div>
               <button
                 type="button"

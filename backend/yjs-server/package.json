@@ -1,0 +1,19 @@
+{
+  "name": "certeafiles-yjs-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "lib0": "^0.2.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "typescript": "^5.3.0",
+    "wrangler": "^3.22.0"
+  }
+}

@@ -1,3 +1,6 @@
+/* Import multi-theme system (Linear, Google, Notion, GitHub) - must be first */
+@import './styles/themes.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,14 +11,16 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light;
-  color: #213547;
-  background-color: #f5f5f5;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Apply theme colors to body */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* ============================================

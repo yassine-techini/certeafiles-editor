@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useCallback } from 'react';
 import { CollaborationPlugin as LexicalCollaborationPlugin } from '@lexical/react/LexicalCollaborationPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot } from 'lexical';
+import { $getRoot, $createParagraphNode } from 'lexical';
 import type { Provider, ProviderAwareness, UserState } from '@lexical/yjs';
 import * as Y from 'yjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -220,11 +220,26 @@ class WebSocketProvider implements Provider {
 
     console.log('[WebSocketProvider] Connecting to:', url.toString());
 
+    // Set a connection timeout - if connection fails, allow offline editing
+    const connectionTimeout = setTimeout(() => {
+      if (this.connecting && !this._connected) {
+        console.log('[WebSocketProvider] Connection timeout - enabling offline mode');
+        this.connecting = false;
+        this.notifyStatus('disconnected');
+        // Notify sync as true to allow local editing even without server
+        if (!this.synced) {
+          this.synced = true;
+          this.notifySync(true);
+        }
+      }
+    }, 5000); // 5 second timeout
+
     try {
       const ws = new WebSocket(url.toString());
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
+        clearTimeout(connectionTimeout);
         if (this._destroyed) {
           ws.close();
           return;
@@ -257,6 +272,7 @@ class WebSocketProvider implements Provider {
       };
 
       ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
         console.log('[WebSocketProvider] WebSocket closed:', event.code, event.reason);
 
         if (this.ws === ws) {
@@ -268,8 +284,11 @@ class WebSocketProvider implements Provider {
           this.doc.off('update', this.handleDocUpdate);
           this._yjsAwareness.off('update', this.handleAwarenessUpdate);
 
-          if (this.synced) {
-            this.notifySync(false);
+          // Keep synced=true to allow continued local editing
+          // Only mark as not synced if we were previously connected and synced
+          if (this.synced && event.code !== 1000) {
+            // Don't reset sync on unexpected disconnect - allow local editing
+            console.log('[WebSocketProvider] Connection lost but keeping local editing enabled');
           }
 
           if (!this._destroyed && event.code !== 1000) {
@@ -281,13 +300,27 @@ class WebSocketProvider implements Provider {
       };
 
       ws.onerror = (error) => {
+        clearTimeout(connectionTimeout);
         console.error('[WebSocketProvider] WebSocket error:', error);
         this.connecting = false;
+        // Enable offline mode on error
+        if (!this.synced) {
+          console.log('[WebSocketProvider] Connection error - enabling offline mode');
+          this.synced = true;
+          this.notifySync(true);
+        }
       };
     } catch (error) {
+      clearTimeout(connectionTimeout);
       console.error('[WebSocketProvider] Connection error:', error);
       this.connecting = false;
       this.notifyStatus('error');
+      // Enable offline mode on error
+      if (!this.synced) {
+        console.log('[WebSocketProvider] Connection failed - enabling offline mode');
+        this.synced = true;
+        this.notifySync(true);
+      }
       this.scheduleReconnect();
     }
   }
@@ -660,35 +693,42 @@ export function CollaborationPlugin({
 
       // Bootstrap if synced and editor is empty
       if (synced && !hasBootstrappedRef.current) {
-        // Wait a tick for Yjs to apply any pending updates
+        // Wait a bit longer for Yjs to apply any pending updates and for FolioPlugin to potentially create content
         setTimeout(() => {
           editor.getEditorState().read(() => {
             const root = $getRoot();
-            const isEmpty = root.getChildrenSize() === 0 ||
-              (root.getChildrenSize() === 1 && root.getTextContent().trim() === '');
+            // Check if truly empty (no children or only empty paragraph/text)
+            const children = root.getChildren();
+            const isEmpty = children.length === 0 ||
+              (children.length === 1 && root.getTextContent().trim() === '');
 
             if (isEmpty) {
-              console.log('[CollaborationPlugin] Document is empty after sync, bootstrapping...');
+              console.log('[CollaborationPlugin] Document is empty after sync, bootstrapping with default folio...');
               hasBootstrappedRef.current = true;
 
               // Call the bootstrap callback if provided
               if (onBootstrapNeededRef.current) {
                 onBootstrapNeededRef.current();
               } else {
-                // Default bootstrap: create a folio
+                // Default bootstrap: create a folio with an empty paragraph
                 editor.update(() => {
                   const folioNode = $createFolioNode({
                     folioId: uuidv4(),
                     folioIndex: 0,
                     orientation: 'portrait',
                   });
+                  // Add an empty paragraph to the folio
+                  folioNode.append($createParagraphNode());
                   $getRoot().append(folioNode);
-                  console.log('[CollaborationPlugin] Created initial folio');
+                  console.log('[CollaborationPlugin] Created initial folio with paragraph');
                 });
               }
+            } else {
+              console.log('[CollaborationPlugin] Document has content after sync:', children.length, 'children');
+              hasBootstrappedRef.current = true;
             }
           });
-        }, 100);
+        }, 200); // Increased delay to allow FolioPlugin to create content first
       }
     };
 

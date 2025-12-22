@@ -2,7 +2,7 @@
  * CerteafilesEditor - Main WYSIWYG Editor Component
  * Per Constitution Section 2.4
  */
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
@@ -60,7 +60,7 @@ import { useFolioStore } from '../../stores/folioStore';
  */
 export interface CerteafilesEditorProps {
   /** Initial editor state as JSON string */
-  initialState?: string;
+  initialState?: string | undefined;
   /** Initial text content to load (plain text) */
   initialTextContent?: string;
   /** Callback when initial content is loaded */
@@ -280,8 +280,19 @@ function EditorInner({
     []
   );
 
-  // Calculate page width based on orientation
-  const pageWidth = orientation === 'landscape' ? 1123 : 794;
+  // Get active folio orientation from store for dynamic page width
+  const activeFolioId = useFolioStore((state) => state.activeFolioId);
+  const foliosMap = useFolioStore((state) => state.folios);
+  const activeFolioOrientation = useMemo(() => {
+    if (activeFolioId && foliosMap.has(activeFolioId)) {
+      return foliosMap.get(activeFolioId)?.orientation || orientation;
+    }
+    return orientation;
+  }, [activeFolioId, foliosMap, orientation]);
+
+  // Calculate page width based on active folio orientation (not prop)
+  // This ensures the container adapts when folio orientation changes
+  const pageWidth = activeFolioOrientation === 'landscape' ? 1123 : 794;
 
   // Get status info for display
   const getStatusInfo = () => {
@@ -303,60 +314,90 @@ function EditorInner({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Editor content with toolbar - single scrollable area */}
-        <div className="flex-1 overflow-auto editor-scroll bg-slate-200">
-          {/* Centered content container */}
-          <div className="flex flex-col items-center">
-            {/* Toolbar - sticky at top, same width as pages */}
-            {showToolbar && (
+      {/* Main content area - horizontal flex layout */}
+      <div className="flex flex-1 min-h-0">
+        {/* Editor scrollable container - takes remaining space, with border */}
+        <div
+          className="flex-1 min-w-0 overflow-auto editor-scroll border-2 border-theme-border-subtle rounded-lg m-1"
+          style={{
+            backgroundColor: 'var(--bg-tertiary)',
+          }}
+        >
+          {/* Toolbar - sticky at top, centered, independent of page width */}
+          {showToolbar && (
+            <div
+              className="sticky top-0 z-20 flex justify-center"
+              style={{
+                backgroundColor: 'var(--bg-tertiary)',
+                paddingTop: '8px',
+                paddingBottom: '8px',
+                overflow: 'visible',
+              }}
+            >
               <div
-                className="sticky top-0 z-20 pt-4 pb-2"
+                className="bg-white rounded-xl shadow-lg border border-slate-200/60"
                 style={{
-                  width: `${pageWidth * zoom}px`,
-                  maxWidth: 'calc(100% - 48px)'
+                  overflow: 'visible',
                 }}
               >
-                <div className="bg-white rounded-xl shadow-lg border border-slate-200/60">
-                  <EditorToolbar
-                    onEditHeaderFooter={() => setIsHeaderFooterEditorOpen(true)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Rich Text Editor with A4 ContentEditable */}
-            <RichTextPlugin
-              contentEditable={
-                <A4ContentEditable
-                  orientation={orientation}
-                  zoom={zoom}
-                  {...(margins && { margins })}
-                  placeholder={<A4Placeholder>{placeholder}</A4Placeholder>}
+                <EditorToolbar
+                  onEditHeaderFooter={() => setIsHeaderFooterEditorOpen(true)}
                 />
-              }
-              ErrorBoundary={LexicalErrorBoundary}
-            />
+              </div>
+            </div>
+          )}
+
+          {/* Inner container for centering page - has min-width to ensure scrollbar appears when zoomed */}
+          <div
+            className="flex flex-col items-center min-h-full py-6 px-4"
+            style={{
+              minWidth: `${Math.max(pageWidth * zoom + 64, 100)}px`,
+            }}
+          >
+            {/* Rich Text Editor with A4 ContentEditable - centered */}
+            <div
+              className="flex-shrink-0"
+              style={{
+                width: `${pageWidth * zoom}px`,
+                minWidth: `${pageWidth * zoom}px`,
+                transition: 'width 0.3s ease, min-width 0.3s ease',
+              }}
+            >
+              <RichTextPlugin
+                contentEditable={
+                  <A4ContentEditable
+                    orientation={orientation}
+                    zoom={zoom}
+                    {...(margins && { margins })}
+                    placeholder={<A4Placeholder>{placeholder}</A4Placeholder>}
+                  />
+                }
+                ErrorBoundary={LexicalErrorBoundary}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Comment Panel - Google Docs style, only if enabled */}
+        {/* Comment Panel - Google Docs style, fixed width, no overlap */}
         {showCommentPanel && (
-          <CommentPanel
-            isOpen={isCommentPanelOpen}
-            onToggle={() => setIsCommentPanelOpen(!isCommentPanelOpen)}
-            onScrollToThread={handleScrollToThread}
-            editor={editor}
-          />
+          <div className="flex-shrink-0 border-l border-theme-border-subtle">
+            <CommentPanel
+              isOpen={isCommentPanelOpen}
+              onToggle={() => setIsCommentPanelOpen(!isCommentPanelOpen)}
+              onScrollToThread={handleScrollToThread}
+              editor={editor}
+            />
+          </div>
         )}
 
         {/* Revision Panel - Track Changes, only if enabled */}
         {showRevisionPanel && (
-          <RevisionPanel
-            isOpen={isRevisionPanelOpen}
-            onClose={() => onToggleRevisionPanel?.()}
-          />
+          <div className="flex-shrink-0 border-l border-theme-border-subtle">
+            <RevisionPanel
+              isOpen={isRevisionPanelOpen}
+              onClose={() => onToggleRevisionPanel?.()}
+            />
+          </div>
         )}
 
       </div>
@@ -580,8 +621,12 @@ export function CerteafilesEditor({
       ? { ...editorConfig, editorState: initialState }
       : editorConfig;
 
+  // Use a key to force remount when collaboration mode changes
+  // This ensures a clean state when switching between local and collaborative editing
+  const composerKey = enableCollaboration ? `collab-${collaborationRoomId}` : 'local';
+
   return (
-    <LexicalComposer initialConfig={initialConfig}>
+    <LexicalComposer key={composerKey} initialConfig={initialConfig}>
       <div className={`certeafiles-editor-container h-full ${className}`}>
         <EditorInner
           orientation={orientation}
