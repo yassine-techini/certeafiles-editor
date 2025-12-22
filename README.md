@@ -2,17 +2,45 @@
 
 A high-performance, multi-folio document editor built with React, Lexical, and TypeScript. Designed for professional document editing with real-time collaboration, comments, revisions tracking, and A4 print-ready output.
 
+## Live Demo
+
+- **Production**: https://certeafiles-editor.pages.dev
+- **Playground**: https://certeafiles-editor.pages.dev/playground
+
 ## Features
 
+### Document Editing
 - **Multi-Folio Editing** - Manage multiple pages with drag-and-drop reordering
 - **A4 Document Layout** - Print-ready pages with portrait/landscape orientation
 - **Rich Text Editing** - Full formatting support via Lexical editor
-- **Real-time Collaboration** - Yjs-powered concurrent editing with presence awareness
-- **Comments & Annotations** - Thread-based comments aligned with document content
-- **Revision History** - Full change tracking with visual diffs
+- **Auto-Pagination** - Automatic page creation when content overflows
 - **Header/Footer Templates** - Customizable page headers and footers
 - **Page Numbering** - Automatic pagination with format options
-- **Performance Optimized** - Virtualized lists, lazy-loaded plugins, debounced saves
+
+### Collaboration
+- **Real-time Collaboration** - Yjs-powered concurrent editing with presence awareness
+- **Cloudflare Durable Objects** - Backend for persistent collaboration state
+- **Comments & Annotations** - Thread-based comments aligned with document content
+- **Revision History** - Full change tracking with visual diffs
+
+### Themes
+Four color themes available:
+- **Amethyst** (Purple) - Default
+- **Sapphire** (Blue)
+- **Aqua** (Teal)
+- **Emerald** (Green)
+
+### Export/Import
+- Export to PDF
+- Export to DOCX (Microsoft Word)
+- Import from PDF
+- Import from DOCX
+
+### Performance
+- Virtualized lists for 100+ pages
+- Lazy-loaded plugins
+- Debounced saves
+- Canvas-based thumbnail generation
 
 ## Architecture
 
@@ -21,41 +49,79 @@ A high-performance, multi-folio document editor built with React, Lexical, and T
 │                         CerteafilesEditor                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌────────────────────────────────────────────┐   │
-│  │ FolioPanel  │  │              OptimizedEditor               │   │
+│  │ FolioPanel  │  │              LexicalComposer               │   │
 │  │             │  │  ┌──────────────────────────────────────┐  │   │
-│  │ - Thumbnails│  │  │           LexicalComposer            │  │   │
-│  │ - Sections  │  │  │  ┌──────────────────────────────┐    │  │   │
-│  │ - Drag/Drop │  │  │  │    A4ContentEditable         │    │  │   │
-│  │             │  │  │  │  ┌────────────────────────┐  │    │  │   │
-│  │ Virtualized │  │  │  │  │   Document Content     │  │    │  │   │
-│  │ for 100+    │  │  │  │  │   - Rich Text          │  │    │  │   │
-│  │ folios      │  │  │  │  │   - Tables             │  │    │  │   │
-│  │             │  │  │  │  │   - Images             │  │    │  │   │
-│  └─────────────┘  │  │  │  │   - Comments           │  │    │  │   │
-│                   │  │  │  └────────────────────────┘  │    │  │   │
-│                   │  │  └──────────────────────────────┘    │  │   │
-│                   │  │                                       │  │   │
-│                   │  │  Plugins: History, List, Link, Table, │  │   │
-│                   │  │  A4Layout, Folio, HeaderFooter,       │  │   │
-│                   │  │  Comments, TrackChanges, Collaboration│  │   │
-│                   │  └──────────────────────────────────────────┘  │
+│  │ - Thumbnails│  │  │           FolioNode (Page)           │  │   │
+│  │ - Sections  │  │  │  ┌────────────────────────────────┐  │  │   │
+│  │ - Drag/Drop │  │  │  │       Document Content         │  │  │   │
+│  │             │  │  │  │   - Rich Text                  │  │  │   │
+│  │ Virtualized │  │  │  │   - Tables                     │  │  │   │
+│  │ for 100+    │  │  │  │   - Images                     │  │  │   │
+│  │ folios      │  │  │  │   - Comments                   │  │  │   │
+│  └─────────────┘  │  │  └────────────────────────────────┘  │  │   │
+│                   │  └──────────────────────────────────────┘  │   │
+│                   │                                             │   │
+│                   │  Plugins: FolioPlugin, AutoPaginationPlugin,│   │
+│                   │  CollaborationPlugin, HeaderFooterPlugin,   │   │
+│                   │  CommentPlugin, TrackChangesPlugin          │   │
+│                   └─────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Stores: folioStore, commentStore, revisionStore, collaborationStore│
+│  Stores: folioStore, documentStore, commentStore, revisionStore    │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+## Project Structure
+
+```
+certeafiles-editor/
+├── src/
+│   ├── components/
+│   │   ├── Editor/           # Main editor components
+│   │   │   ├── CerteafilesEditor.tsx
+│   │   │   └── EditorToolbar.tsx
+│   │   ├── Folios/           # Page management
+│   │   │   ├── FolioPanel.tsx
+│   │   │   └── FolioThumbnail.tsx
+│   │   ├── DocumentList/     # Document management
+│   │   └── ThemeSelector/    # Theme switching
+│   ├── nodes/                # Custom Lexical nodes
+│   │   ├── FolioNode.ts      # Page node
+│   │   └── PageBreakNode.ts
+│   ├── plugins/              # Lexical plugins
+│   │   ├── FolioPlugin.tsx   # Page sync with store
+│   │   ├── AutoPaginationPlugin.tsx
+│   │   ├── CollaborationPlugin.tsx
+│   │   └── HeaderFooterPlugin.tsx
+│   ├── stores/               # Zustand state management
+│   │   ├── folioStore.ts     # Page state
+│   │   └── documentStore.ts  # Document state
+│   ├── contexts/             # React contexts
+│   │   └── ThemeContext.tsx
+│   ├── hooks/                # Custom hooks
+│   ├── types/                # TypeScript types
+│   ├── styles/               # Theme CSS files
+│   └── utils/                # Utilities
+├── backend/
+│   └── yjs-server/           # Cloudflare Durable Objects Yjs server
+│       ├── src/
+│       │   ├── index.ts
+│       │   └── YjsRoom.ts
+│       └── wrangler.toml
+└── public/
 ```
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- pnpm 8+
+- Node.js >= 18.0.0
+- pnpm (recommended) or npm
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/yassine-techini/certeafiles-editor.git
 cd certeafiles-editor
 
 # Install dependencies
@@ -69,63 +135,13 @@ pnpm dev
 
 | Command | Description |
 |---------|-------------|
-| `pnpm dev` | Start development server with HMR |
+| `pnpm dev` | Start development server at http://localhost:5173 |
 | `pnpm build` | Build for production |
-| `pnpm preview` | Preview production build |
 | `pnpm test` | Run unit tests with Vitest |
 | `pnpm test:e2e` | Run E2E tests with Playwright |
+| `pnpm test:coverage` | Run tests with coverage |
 | `pnpm lint` | Run ESLint |
-| `pnpm tsc` | Type check with TypeScript |
-
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── Editor/           # Main editor components
-│   │   ├── A4ContentEditable.tsx
-│   │   ├── EditorToolbar.tsx
-│   │   └── OptimizedEditor.tsx
-│   ├── Folios/           # Folio management
-│   │   ├── FolioPanel.tsx
-│   │   ├── FolioThumbnail.tsx
-│   │   ├── FolioSortableList.tsx
-│   │   └── VirtualizedFolioList.tsx
-│   ├── Comments/         # Comment system
-│   │   ├── AlignedCommentPanel.tsx
-│   │   └── CommentThread.tsx
-│   ├── Revisions/        # Revision history
-│   │   ├── RevisionPanel.tsx
-│   │   └── RevisionDiff.tsx
-│   ├── HeaderFooter/     # Header/footer templates
-│   └── UI/               # Shared UI components
-│       └── LoadingStates.tsx
-├── plugins/              # Lexical plugins
-│   ├── A4LayoutPlugin.tsx
-│   ├── FolioPlugin.tsx
-│   ├── CommentPlugin.tsx
-│   ├── CollaborationPlugin.tsx
-│   ├── TrackChangesPlugin.tsx
-│   └── LazyPlugins.tsx
-├── stores/               # Zustand state stores
-│   ├── folioStore.ts
-│   ├── commentStore.ts
-│   ├── revisionStore.ts
-│   └── collaborationStore.ts
-├── hooks/                # Custom React hooks
-│   ├── useFolios.ts
-│   ├── useFolioThumbnails.ts
-│   ├── useAutoSave.ts
-│   └── useKeyboardNavigation.ts
-├── utils/                # Utilities
-│   ├── a4-constants.ts
-│   ├── performance.ts
-│   └── generateUUID.ts
-└── types/                # TypeScript types
-    ├── folio.ts
-    ├── comment.ts
-    └── revision.ts
-```
+| `pnpm format` | Format with Prettier |
 
 ## API Documentation
 
@@ -134,17 +150,17 @@ src/
 The main editor component.
 
 ```tsx
-import { CerteafilesEditor } from './components/Editor/CerteafilesEditor';
+import { CerteafilesEditor } from 'certeafiles-editor';
 
 <CerteafilesEditor
-  initialState={serializedEditorState}
-  editable={true}
+  placeholder="Start typing..."
   orientation="portrait"
-  zoom={1.0}
+  zoom={0.75}
   showToolbar={true}
-  showCommentPanel={true}
-  onChange={(editorState, editor) => {}}
-  onReady={(editor) => {}}
+  showFolioPanel={true}
+  editable={true}
+  enableCollaboration={false}
+  onChange={(state) => {}}
 />
 ```
 
@@ -152,15 +168,14 @@ import { CerteafilesEditor } from './components/Editor/CerteafilesEditor';
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `initialState` | `string` | - | Serialized Lexical editor state |
-| `editable` | `boolean` | `true` | Whether content is editable |
-| `orientation` | `'portrait' \| 'landscape'` | `'portrait'` | Page orientation |
-| `zoom` | `number` | `1.0` | Zoom level (0.5 - 2.0) |
-| `margins` | `object` | - | Custom margins in mm |
-| `showToolbar` | `boolean` | `true` | Show editor toolbar |
-| `showCommentPanel` | `boolean` | `true` | Show comment panel |
-| `onChange` | `function` | - | Called on content change |
-| `onReady` | `function` | - | Called when editor is ready |
+| `placeholder` | `string` | "Start typing..." | Placeholder text |
+| `orientation` | `'portrait' \| 'landscape'` | `'portrait'` | Default page orientation |
+| `zoom` | `number` | `0.75` | Zoom level (0.25 - 2.0) |
+| `showToolbar` | `boolean` | `true` | Show/hide toolbar |
+| `showFolioPanel` | `boolean` | `true` | Show/hide page panel |
+| `editable` | `boolean` | `true` | Enable/disable editing |
+| `enableCollaboration` | `boolean` | `false` | Enable real-time collaboration |
+| `onChange` | `function` | - | Callback on content change |
 
 ### FolioStore
 
@@ -170,156 +185,57 @@ Manages document pages (folios).
 import { useFolioStore } from './stores/folioStore';
 
 // Get folios
-const folios = useFolioStore(state => state.getFoliosInOrder());
+const folios = useFolioStore(state => state.folios);
 const activeFolioId = useFolioStore(state => state.activeFolioId);
 
 // Actions
-const { createFolio, deleteFolio, reorderFolios, setActiveFolio } = useFolioStore.getState();
+const { createFolio, deleteFolio, setActiveFolio, updateFolioOrientation } = useFolioStore.getState();
 
 // Create new folio
 createFolio({ afterId: 'folio-123' });
 
-// Reorder folios
-reorderFolios('folio-1', 'folio-3'); // Move folio-1 after folio-3
+// Change orientation
+updateFolioOrientation('folio-123', 'landscape');
 ```
 
-### CommentStore
-
-Manages document comments and threads.
-
-```typescript
-import { useCommentStore } from './stores/commentStore';
-
-// Get comments
-const threads = useCommentStore(state => state.getThreadsForFolio('folio-123'));
-
-// Actions
-const { createThread, addReply, resolveThread, deleteThread } = useCommentStore.getState();
-
-// Create comment thread
-createThread({
-  content: 'Please review this section',
-  anchorKey: 'node-key',
-  anchorOffset: 0,
-  focusKey: 'node-key',
-  focusOffset: 10,
-});
-
-// Add reply
-addReply('thread-123', 'Thanks for the feedback!');
-```
-
-### RevisionStore
-
-Manages revision history.
-
-```typescript
-import { useRevisionStore } from './stores/revisionStore';
-
-// Get revisions
-const revisions = useRevisionStore(state => state.revisions);
-const currentRevision = useRevisionStore(state => state.currentRevisionId);
-
-// Actions
-const { createRevision, restoreRevision, compareRevisions } = useRevisionStore.getState();
-
-// Create revision snapshot
-createRevision('Added introduction section');
-
-// Restore previous revision
-restoreRevision('rev-123');
-```
-
-## Performance
-
-The editor is optimized for performance with the following features:
-
-| Metric | Target | Implementation |
-|--------|--------|----------------|
-| Initial Load | < 2s | Lazy-loaded plugins, code splitting |
-| Folio Render | < 100ms | Memoized components, virtualized list |
-| Sync Latency | < 200ms | Debounced saves, optimistic updates |
-| Thumbnail Gen | < 50ms | Canvas rendering, caching |
-
-### Performance Monitoring
-
-```typescript
-import { performanceMonitor, METRIC_NAMES } from './utils/performance';
-
-// Initialize monitoring
-performanceMonitor.initialize();
-
-// Get performance summary
-const summary = performanceMonitor.getSummary();
-console.log(summary);
-// {
-//   initialLoad: { duration: 1234, target: 2000, met: true },
-//   folioRender: { avg: 45, max: 89, target: 100, met: true },
-//   ...
-// }
-```
-
-## Testing
-
-### Unit Tests
-
-```bash
-# Run all tests
-pnpm test
-
-# Run with coverage
-pnpm test --coverage
-
-# Run in watch mode
-pnpm test --watch
-```
-
-### E2E Tests
-
-```bash
-# Run all E2E tests
-pnpm test:e2e
-
-# Run specific test file
-pnpm exec playwright test e2e/editor.spec.ts
-
-# Run with UI
-pnpm exec playwright test --ui
-```
-
-## Deployment
-
-### Build for Production
-
-```bash
-pnpm build
-```
-
-### Deploy to Cloudflare Pages
-
-```bash
-CLOUDFLARE_ACCOUNT_ID=<account-id> pnpm wrangler pages deploy dist
-```
-
-## Accessibility
-
-The editor follows WCAG 2.1 AA guidelines:
-
-- **Keyboard Navigation** - Full keyboard support with focus management
-- **Screen Reader Support** - ARIA labels and live announcements
-- **Focus Trapping** - Modal dialogs trap focus correctly
-- **High Contrast** - Supports reduced motion and high contrast modes
-
-### Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+S` | Save document |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` | Redo |
-| `Ctrl+B` | Bold |
-| `Ctrl+I` | Italic |
-| `Ctrl+U` | Underline |
+| `Ctrl/Cmd + B` | Bold |
+| `Ctrl/Cmd + I` | Italic |
+| `Ctrl/Cmd + U` | Underline |
+| `Ctrl/Cmd + Z` | Undo |
+| `Ctrl/Cmd + Shift + Z` | Redo |
+
+## Deployment
+
+### Cloudflare Pages (Frontend)
+
+```bash
+# Build and deploy to production
+pnpm build
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> wrangler pages deploy dist --project-name=certeafiles-editor --branch=main
+```
+
+### Yjs Server (Durable Objects)
+
+```bash
+cd backend/yjs-server
+pnpm install
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> wrangler deploy
+```
+
+## Technology Stack
+
+- **Frontend**: React 18, TypeScript, Vite
+- **Editor**: Lexical (Meta's text editor framework)
+- **Styling**: Tailwind CSS
+- **State Management**: Zustand with subscribeWithSelector
+- **Collaboration**: Yjs, y-partykit
+- **Backend**: Cloudflare Workers, Durable Objects
+- **Testing**: Vitest, Playwright
+- **Deployment**: Cloudflare Pages
 
 ## Browser Support
 
@@ -328,6 +244,23 @@ The editor follows WCAG 2.1 AA guidelines:
 - Safari 15+
 - Edge 90+
 
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Repository
+
+- **GitHub**: https://github.com/yassine-techini/certeafiles-editor
+- **Production URL**: https://certeafiles-editor.pages.dev
+
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Private - All rights reserved
+
+## Support
+
+For issues and feature requests, please use [GitHub Issues](https://github.com/yassine-techini/certeafiles-editor/issues).
